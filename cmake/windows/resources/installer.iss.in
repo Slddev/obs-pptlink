@@ -1,0 +1,52 @@
+#define MyAppName "@CMAKE_PROJECT_NAME@"
+#define MyAppVersion "@CMAKE_PROJECT_VERSION@"
+#define MyAppPublisher "@PLUGIN_AUTHOR@"
+#define MyAppURL "@PLUGIN_WEBSITE@"
+
+[Setup]
+; NOTE: The value of AppId uniquely identifies this application.
+; Do not use the same AppId value in installers for other applications.
+; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
+AppId={{406C14FF-FD57-404E-93C9-659DCA3E8600}}
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+AppPublisherURL={#MyAppURL}
+AppSupportURL={#MyAppURL}
+AppUpdatesURL={#MyAppURL}
+DefaultDirName={commonappdata}\obs-studio\plugins\obs-pptlink
+DefaultGroupName={#MyAppName}
+OutputBaseFilename={#MyAppName}-{#MyAppVersion}-windows-x64-installer
+OutputDir=@CMAKE_CURRENT_SOURCE_DIR@/release
+Compression=lzma
+SolidCompression=yes
+DirExistsWarning=no
+DisableProgramGroupPage=yes
+DisableReadyPage=no
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Files]
+; Recursively include all files from the staged release directory.
+; Package-Windows.ps1 installs to release\<Config>\<PluginName>\ before running iscc.
+Source: "@CMAKE_CURRENT_SOURCE_DIR@\release\Package\{#MyAppName}\*"; \
+  DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+
+[Icons]
+Name: "{group}\{cm:ProgramOnTheWeb,{#MyAppName}}"; Filename: "{#MyAppURL}"
+
+[Code]
+// Abort if OBS Studio is running — the DLL cannot be replaced while loaded.
+function InitializeSetup(): Boolean;
+var
+  Processes: TStringList;
+  I: Integer;
+begin
+  Result := True;
+  if CheckForMutexes('OBSMutex') then
+  begin
+    MsgBox('OBS Studio is running. Please close it before installing {#MyAppName}.', mbError, MB_OK);
+    Result := False;
+  end;
+end;
