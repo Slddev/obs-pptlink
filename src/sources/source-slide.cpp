@@ -147,7 +147,15 @@ static void slide_source_render(void *data, gs_effect_t *effect)
 	if (!texture)
 		return;
 
-	obs_source_draw(texture, 0, 0, 0, 0, false);
+	gs_eparam_t *image = gs_effect_get_param_by_name(effect, "image");
+	gs_effect_set_texture(image, texture);
+
+	uint32_t w = gs_texture_get_width(texture);
+	uint32_t h = gs_texture_get_height(texture);
+
+	while (gs_effect_loop(effect, "Draw")) {
+		gs_draw_sprite(texture, 0, w, h);
+	}
 }
 
 void SlideSource::TryStartCapture()
