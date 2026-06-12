@@ -120,6 +120,7 @@ bool CaptureSession::StartCapture(HWND hwnd)
 	}
 
 	StopCapture();
+	m_freezing.store(false);
 	m_hwnd = hwnd;
 
 	m_mdiClient = nullptr;
@@ -128,9 +129,8 @@ bool CaptureSession::StartCapture(HWND hwnd)
 		GetClassNameW(hwnd, cls, 64);
 		if (wcscmp(cls, L"PPTFrameClass") == 0) {
 			HWND mdi = FindWindowEx(hwnd, nullptr, L"MDIClient", nullptr);
-			if (mdi && IsWindowVisible(mdi)) {
+			if (mdi && IsWindowVisible(mdi))
 				m_mdiClient = mdi;
-			}
 		}
 	}
 
@@ -186,9 +186,60 @@ bool CaptureSession::StartCapture(HWND hwnd)
 	}
 }
 
+void CaptureSession::FreezeLastFrame()
+{
+	std::lock_guard<std::mutex> lk(m_frameMutex);
+
+	if (!m_renderTex || !m_lastWidth || !m_lastHeight)
+		return;
+
+	if (m_frozenTex) {
+		gs_texture_destroy(m_frozenTex);
+		m_frozenTex = nullptr;
+	}
+	m_frozenD3DTex = nullptr;
+
+	D3D11_TEXTURE2D_DESC desc = {};
+	desc.Width = m_lastWidth;
+	desc.Height = m_lastHeight;
+	desc.MipLevels = 1;
+	desc.ArraySize = 1;
+	desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+	desc.SampleDesc.Count = 1;
+	desc.Usage = D3D11_USAGE_DEFAULT;
+	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+	HRESULT hr = m_obsDevice->CreateTexture2D(&desc, nullptr, m_frozenD3DTex.put());
+	if (FAILED(hr)) {
+		blog(LOG_WARNING, "[obs-pptlink] FreezeLastFrame: CreateTexture2D failed 0x%08X", hr);
+		return;
+	}
+
+	m_obsContext->CopyResource(m_frozenD3DTex.get(), m_renderTex.get());
+
+	m_frozenTex = gs_texture_wrap_obj(m_frozenD3DTex.get());
+	if (!m_frozenTex) {
+		blog(LOG_WARNING, "[obs-pptlink] FreezeLastFrame: gs_texture_wrap_obj failed");
+		m_frozenD3DTex = nullptr;
+		return;
+	}
+
+	m_frozenWidth = m_lastWidth;
+	m_frozenHeight = m_lastHeight;
+}
+
 void CaptureSession::StopCapture()
 {
+	m_freezing.store(true);
+
+	if (m_running.load() && m_renderTex) {
+		obs_enter_graphics();
+		FreezeLastFrame();
+		obs_leave_graphics();
+	}
+
 	m_running.store(false);
+	m_freezing.store(false);
 
 	if (m_pool && m_frameToken.value != 0) {
 		m_pool.FrameArrived(m_frameToken);
@@ -218,6 +269,15 @@ void CaptureSession::StopCapture()
 void CaptureSession::Destroy()
 {
 	StopCapture();
+	if (m_frozenTex) {
+		obs_enter_graphics();
+		gs_texture_destroy(m_frozenTex);
+		obs_leave_graphics();
+		m_frozenTex = nullptr;
+		m_frozenWidth = 0;
+		m_frozenHeight = 0;
+	}
+	m_frozenD3DTex = nullptr;
 	m_wrtDevice = nullptr;
 	m_obsContext = nullptr;
 	m_obsDevice = nullptr;
@@ -266,6 +326,15 @@ void CaptureSession::OnFrameArrivedInternal(winrt::Windows::Graphics::Capture::D
 	if (!frame)
 		return;
 
+	if (m_freezing.load())
+		return;
+
+	if (m_mdiClient && !IsSlideshowTitle(m_hwnd))
+		return;
+
+	if (ShouldAcceptFrame && !ShouldAcceptFrame())
+		return;
+
 	auto contentSize = frame.ContentSize();
 	uint32_t fw = static_cast<uint32_t>(contentSize.Width);
 	uint32_t fh = static_cast<uint32_t>(contentSize.Height);
@@ -303,9 +372,6 @@ void CaptureSession::OnFrameArrivedInternal(winrt::Windows::Graphics::Capture::D
 		sizeChanged = (w != m_lastWidth || h != m_lastHeight);
 
 		if (sizeChanged || !m_renderTex) {
-			// D3D11_USAGE_DEFAULT is required for CopyResource destination.
-			// GS_DYNAMIC maps to D3D11_USAGE_DYNAMIC which cannot be a
-			// CopyResource target and produces a black texture.
 			D3D11_TEXTURE2D_DESC desc = {};
 			desc.Width = w;
 			desc.Height = h;
@@ -358,6 +424,11 @@ void CaptureSession::OnFrameArrivedInternal(winrt::Windows::Graphics::Capture::D
 
 bool CaptureSession::AcquireLatestFrame(gs_texture_t *&texture)
 {
+	if (!m_running.load()) {
+		texture = m_frozenTex;
+		return false;
+	}
+
 	std::lock_guard<std::mutex> lk(m_frameMutex);
 
 	if (m_textureDirty.exchange(false) && m_obsTexture) {
@@ -396,8 +467,8 @@ bool CaptureSession::AcquireLatestFrame(gs_texture_t *&texture)
 }
 
 struct FindSlideshowCtx {
-	HWND result = nullptr;  // always a top-level HWND (WGC requirement)
-	HWND pptHwnd = nullptr; // optional process-filter
+	HWND result = nullptr;
+	HWND pptHwnd = nullptr;
 };
 
 static BOOL CALLBACK FindSlideshowEnum(HWND hwnd, LPARAM lParam)
@@ -482,7 +553,7 @@ RECT GetMdiClientCropRect(HWND pptFrameHwnd, HWND mdiClient)
 
 	RECT dwmFrame = {};
 	if (FAILED(DwmGetWindowAttribute(pptFrameHwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &dwmFrame, sizeof(dwmFrame))))
-		GetWindowRect(pptFrameHwnd, &dwmFrame); // fallback: no shadow
+		GetWindowRect(pptFrameHwnd, &dwmFrame);
 
 	LONG ox = origin.x - dwmFrame.left;
 	LONG oy = origin.y - dwmFrame.top;

@@ -46,6 +46,20 @@ static void *slide_source_create(obs_data_t *settings, obs_source_t *source)
 		obs_source_update(source, nullptr);
 	};
 
+	ctx->capture.ShouldAcceptFrame = [ctx]() {
+		return ctx->slideshowActive.load();
+	};
+
+	if (ctx->bridge) {
+		ctx->bridge->OnSlideChanged = [ctx](const ppt::SlideInfo &info) {
+			ctx->slideshowActive.store(info.slideshowActive);
+		};
+		ctx->bridge->OnConnectionChanged = [ctx](bool connected) {
+			if (!connected)
+				ctx->slideshowActive.store(false);
+		};
+	}
+
 	ctx->hotkeyNext = obs_hotkey_register_source(
 		source, "ppt.next_slide", obs_module_text("PPT.Hotkey.NextSlide"),
 		[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
@@ -78,6 +92,11 @@ static void *slide_source_create(obs_data_t *settings, obs_source_t *source)
 static void slide_source_destroy(void *data)
 {
 	auto *ctx = static_cast<SlideSource *>(data);
+
+	if (ctx->bridge) {
+		ctx->bridge->OnSlideChanged = nullptr;
+		ctx->bridge->OnConnectionChanged = nullptr;
+	}
 
 	if (ctx->hotkeyNext != OBS_INVALID_HOTKEY_ID)
 		obs_hotkey_unregister(ctx->hotkeyNext);
@@ -115,13 +134,8 @@ static void slide_source_tick(void *data, float seconds)
 		return;
 
 	ctx->pollAccum += seconds;
-	if (ctx->pollAccum < 0.5f && ctx->lastHwnd != nullptr) {
-		if (!IsWindow(ctx->lastHwnd)) {
-			ctx->lastHwnd = nullptr;
-			ctx->capture.StopCapture();
-		}
+	if (ctx->pollAccum < 0.5f)
 		return;
-	}
 	ctx->pollAccum = 0.0f;
 
 	HWND hwnd = wgc::FindSlideshowWindow(nullptr);
@@ -129,7 +143,8 @@ static void slide_source_tick(void *data, float seconds)
 	if (hwnd != ctx->lastHwnd) {
 		ctx->lastHwnd = hwnd;
 		if (hwnd) {
-			bool ok = ctx->capture.StartCapture(hwnd);
+			ctx->slideshowActive.store(true);
+			ctx->capture.StartCapture(hwnd);
 		} else {
 			ctx->capture.StopCapture();
 		}
@@ -148,8 +163,12 @@ static void slide_source_render(void *data, gs_effect_t *effect)
 	if (!ctx)
 		return;
 
-	gs_texture_t *texture = nullptr;
+	if (ctx->capture.IsRunning() && !ctx->slideshowActive.load()) {
+		ctx->lastHwnd = nullptr;
+		ctx->capture.StopCapture();
+	}
 
+	gs_texture_t *texture = nullptr;
 	ctx->capture.AcquireLatestFrame(texture);
 
 	if (!texture)

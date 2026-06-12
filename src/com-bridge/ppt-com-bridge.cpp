@@ -101,19 +101,15 @@ HRESULT DispCallExport(IDispatch *pSlide, const wchar_t *path, int width, int he
 		return hr;
 
 	VARIANT args[4];
-	for (int i = 0; i < 4; ++i) {
+	for (int i = 0; i < 4; ++i)
 		VariantInit(&args[i]);
-	}
 
 	args[0].vt = VT_I4;
 	args[0].lVal = height;
-
 	args[1].vt = VT_I4;
 	args[1].lVal = width;
-
 	args[2].vt = VT_BSTR;
 	args[2].bstrVal = SysAllocString(L"PNG");
-
 	args[3].vt = VT_BSTR;
 	args[3].bstrVal = SysAllocString(path);
 
@@ -379,7 +375,6 @@ void ComBridge::PollState()
 		return;
 	}
 
-	// ---- Read current slide position --------------------------------
 	VARIANT v;
 	VariantInit(&v);
 	HRESULT hr = DispGetProp(m_pView, L"CurrentShowPosition", &v);
@@ -390,7 +385,6 @@ void ComBridge::PollState()
 		VariantClear(&v);
 	}
 
-	// cur < 0  → COM call failed entirely → disconnect after threshold
 	if (cur < 0) {
 		if (++m_consecutiveFailures >= 15) {
 			m_consecutiveFailures = 0;
@@ -400,12 +394,21 @@ void ComBridge::PollState()
 	}
 	m_consecutiveFailures = 0;
 
-	// cur == 0 → PPT is mid-transition; don't clobber last known good state.
-	// Just return and let the next poll (100ms later) pick up the real index.
-	if (cur == 0)
+	if (cur == 0) {
+		if (m_lastSlideIndex > 0) {
+			m_lastSlideIndex = 0;
+			SlideInfo inactive;
+			inactive.slideshowActive = false;
+			{
+				std::lock_guard<std::mutex> lk(m_mutex);
+				m_state = inactive;
+			}
+			if (OnSlideChanged)
+				OnSlideChanged(inactive);
+		}
 		return;
+	}
 
-	// ---- Rest of the poll uses a valid, non-zero slide index ----------
 	int total = 0;
 	HWND showHwnd = nullptr;
 	std::wstring notes, nextNotes;
@@ -445,10 +448,6 @@ void ComBridge::PollState()
 				IDispatch *pNext = getSlide(cur + 1);
 				if (pNext) {
 					nextNotes = GetNotesText(pNext);
-
-					// Export thumbnail only when the slide actually changed,
-					// and only for a valid new index (cur > 0 guaranteed here).
-					// m_lastExportedIndex is a member now — safe across reconnects.
 					if (cur != m_lastExportedIndex) {
 						wchar_t tempPath[MAX_PATH];
 						GetTempPathW(MAX_PATH, tempPath);
@@ -464,7 +463,6 @@ void ComBridge::PollState()
 		pPres->Release();
 	}
 
-	// ---- HWND --------------------------------------------------------
 	{
 		VARIANT vh;
 		VariantInit(&vh);
@@ -480,7 +478,6 @@ void ComBridge::PollState()
 		}
 	}
 
-	// ---- Slide pane rect ---------------------------------------------
 	SlidePaneRect paneRect;
 	if (showHwnd) {
 		HWND mdiClient = FindWindowEx(showHwnd, nullptr, L"MDIClient", nullptr);
@@ -534,7 +531,6 @@ void ComBridge::PollState()
 	if (paneRect.valid)
 		m_slideAspect.store(static_cast<float>(paneRect.w) / static_cast<float>(paneRect.h));
 
-	// ---- Commit state ------------------------------------------------
 	bool changed = (cur != m_lastSlideIndex);
 	m_lastSlideIndex = cur;
 

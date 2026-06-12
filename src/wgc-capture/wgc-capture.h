@@ -58,26 +58,27 @@ public:
 	void StopCapture();
 	void Destroy();
 	bool AcquireLatestFrame(gs_texture_t *&texture);
-
-	// Called from source-slide.cpp's tick to feed the real slide aspect ratio
-	// (width/height) so ComputeLetterboxCrop strips PPT's black bars correctly.
-	// Safe to call from any thread.
+	void FreezeLastFrame();
 	void SetSlideAspect(float aspect);
 
 	bool IsRunning() const { return m_running.load(); }
 	HWND GetHwnd() const { return m_hwnd; }
-	uint32_t Width() const { return m_lastWidth; }
-	uint32_t Height() const { return m_lastHeight; }
+	uint32_t Width() const
+	{
+		return m_running.load() ? m_lastWidth : (m_frozenWidth ? m_frozenWidth : m_lastWidth);
+	}
+	uint32_t Height() const
+	{
+		return m_running.load() ? m_lastHeight : (m_frozenHeight ? m_frozenHeight : m_lastHeight);
+	}
 
 	std::function<void()> OnFrameArrived;
+	std::function<bool()> ShouldAcceptFrame;
 
 private:
 	void OnFrameArrivedInternal(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool const &,
 				    winrt::Windows::Foundation::IInspectable const &);
 
-	// Compute the slide-only sub-rect within mdiInFrame (WGC frame coords)
-	// by fitting the slide aspect ratio into the MDIClient area.
-	// Caller must hold m_frameMutex.
 	RECT ComputeLetterboxCrop(RECT mdiInFrame) const;
 
 	winrt::Windows::Graphics::Capture::GraphicsCaptureItem m_item{nullptr};
@@ -92,22 +93,17 @@ private:
 	winrt::com_ptr<ID3D11Texture2D> m_renderTex;
 	gs_texture_t *m_obsTexture = nullptr;
 
+	gs_texture_t *m_frozenTex = nullptr;
+	winrt::com_ptr<ID3D11Texture2D> m_frozenD3DTex;
+	uint32_t m_frozenWidth = 0;
+	uint32_t m_frozenHeight = 0;
+
 	HWND m_hwnd = nullptr;
-
-	// PPTFrameClass windowed-slideshow crop:
-	//   m_mdiClient — MDIClient child: removes title bar / ribbon / bottom bar.
-	//                 Queried live on every frame so resizes are handled without
-	//                 restarting the session.
-	// The slide is letterboxed inside MDIClient by PPT (black bars are painted
-	// directly into the mdiClass window — there is no separate child window for
-	// the slide surface).  ComputeLetterboxCrop strips those bars using m_slideAspect.
 	HWND m_mdiClient = nullptr;
-
-	// Slide aspect ratio (width/height).  Updated from the COM bridge via
-	// SetSlideAspect() each tick.  Protected by m_frameMutex.
 	float m_slideAspect = 16.0f / 9.0f;
 
 	std::atomic<bool> m_running{false};
+	std::atomic<bool> m_freezing{false};
 	std::atomic<bool> m_newFrame{false};
 	std::atomic<bool> m_textureDirty{false};
 	bool m_useFallbackCopy = false;
@@ -116,14 +112,9 @@ private:
 	std::mutex m_frameMutex;
 };
 
-// Window-finding utilities used across compilation units.
 HWND FindSlidePaneChild(HWND frameHwnd);
 HWND FindSlideshowWindow(HWND pptHwnd = nullptr);
-
-// Returns the MDIClient rect in WGC frame coordinates (DWM-frame-relative
-// screen pixels).  Returns {0,0,0,0} on failure.
 RECT GetMdiClientCropRect(HWND pptFrameHwnd, HWND mdiClient);
-
 bool IsWGCSupported();
 
 } // namespace wgc
