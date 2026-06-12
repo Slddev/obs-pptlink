@@ -60,28 +60,6 @@ static void *slide_source_create(obs_data_t *settings, obs_source_t *source)
 		};
 	}
 
-	ctx->hotkeyNext = obs_hotkey_register_source(
-		source, "ppt.next_slide", obs_module_text("PPT.Hotkey.NextSlide"),
-		[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
-			if (pressed) {
-				auto *ctx = static_cast<SlideSource *>(data);
-				if (ctx->bridge)
-					ctx->bridge->NextSlide();
-			}
-		},
-		ctx);
-
-	ctx->hotkeyPrev = obs_hotkey_register_source(
-		source, "ppt.prev_slide", obs_module_text("PPT.Hotkey.PrevSlide"),
-		[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
-			if (pressed) {
-				auto *ctx = static_cast<SlideSource *>(data);
-				if (ctx->bridge)
-					ctx->bridge->PrevSlide();
-			}
-		},
-		ctx);
-
 	obs_leave_graphics();
 
 	obs_source_update(source, settings);
@@ -97,11 +75,6 @@ static void slide_source_destroy(void *data)
 		ctx->bridge->OnSlideChanged = nullptr;
 		ctx->bridge->OnConnectionChanged = nullptr;
 	}
-
-	if (ctx->hotkeyNext != OBS_INVALID_HOTKEY_ID)
-		obs_hotkey_unregister(ctx->hotkeyNext);
-	if (ctx->hotkeyPrev != OBS_INVALID_HOTKEY_ID)
-		obs_hotkey_unregister(ctx->hotkeyPrev);
 
 	ctx->capture.Destroy();
 	delete ctx;
@@ -191,7 +164,7 @@ void SlideSource::TryStartCapture()
 
 void SlideSource::RenderFrame(gs_effect_t *effect)
 {
-	(void)effect; // We'll use our own effect
+	(void)effect;
 
 	gs_texture_t *tex = nullptr;
 	bool hasNew = capture.AcquireLatestFrame(tex);

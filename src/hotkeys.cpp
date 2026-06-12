@@ -100,6 +100,13 @@ static void LoadBindings()
 	}
 }
 
+static void OnFrontendEvent(enum obs_frontend_event event, void *)
+{
+	if (event == OBS_FRONTEND_EVENT_EXIT ||
+	    event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP)
+		SaveBindings();
+}
+
 void Register(ppt::ComBridge *bridge)
 {
 	g_br = bridge;
@@ -136,8 +143,8 @@ void Register(ppt::ComBridge *bridge)
 		},
 		nullptr);
 
-	// Bindings must be loaded after all four IDs are registered.
 	LoadBindings();
+	obs_frontend_add_event_callback(OnFrontendEvent, nullptr);
 }
 
 void Save()
@@ -147,6 +154,7 @@ void Save()
 
 void Unregister()
 {
+	obs_frontend_remove_event_callback(OnFrontendEvent, nullptr);
 	SaveBindings();
 
 	if (g_first != OBS_INVALID_HOTKEY_ID) {
