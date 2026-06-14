@@ -225,6 +225,7 @@ void RegisterSlideSource()
 	info.get_defaults = slide_source_get_defaults;
 
 	obs_register_source(&info);
+	blog(LOG_INFO, "[obs-pptlink] Registered source: ppt_slide_source");
 }
 
 } // namespace sources
