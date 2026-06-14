@@ -27,10 +27,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace dock {
 
-// ============================================================
-//  NextSlidePreviewLabel  (unchanged)
-// ============================================================
-
 NextSlidePreviewLabel::NextSlidePreviewLabel(QWidget *parent) : QLabel(parent)
 {
 	setAlignment(Qt::AlignCenter);
@@ -72,10 +68,6 @@ void NextSlidePreviewLabel::paintEvent(QPaintEvent *e)
 	QLabel::paintEvent(e);
 }
 
-// ============================================================
-//  NextSlideDock  (preview + counter)
-// ============================================================
-
 NextSlideDock::NextSlideDock(ppt::ComBridge *bridge, QWidget *parent) : QWidget(parent), m_bridge(bridge)
 {
 	setObjectName("PPTNextSlideDock");
@@ -97,7 +89,6 @@ void NextSlideDock::buildUi()
 	vbox->setContentsMargins(6, 6, 6, 6);
 	vbox->setSpacing(6);
 
-	// "UP NEXT" header
 	QLabel *upNext = new QLabel(obs_module_text("PPT.NextSlideDock.UpNext"), this);
 	{
 		QFont f = upNext->font();
@@ -108,13 +99,11 @@ void NextSlideDock::buildUi()
 	}
 	vbox->addWidget(upNext);
 
-	// Preview image
 	m_preview = new NextSlidePreviewLabel(this);
 	m_preview->setMinimumHeight(120);
 	m_preview->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 	vbox->addWidget(m_preview, 3);
 
-	// No-signal overlay
 	m_noSignal = new QLabel(obs_module_text("PPT.NextSlideDock.NoSignal"), this);
 	m_noSignal->setAlignment(Qt::AlignCenter);
 	m_noSignal->setStyleSheet("color:#888; background:#1a1a1a;"
@@ -122,13 +111,11 @@ void NextSlideDock::buildUi()
 	m_noSignal->setVisible(false);
 	vbox->addWidget(m_noSignal);
 
-	// Divider
 	QFrame *div = new QFrame(this);
 	div->setFrameShape(QFrame::HLine);
 	div->setStyleSheet("color:#333;");
 	vbox->addWidget(div);
 
-	// Slide counter
 	m_counter = new QLabel("—", this);
 	m_counter->setAlignment(Qt::AlignCenter);
 	{
@@ -176,16 +163,18 @@ void NextSlideDock::onPollTimer()
 
 void NextSlideDock::loadThumbnail(int currentSlide, int totalSlides)
 {
-	if (currentSlide <= 0 || currentSlide >= totalSlides) {
+	if (currentSlide <= 0) {
 		m_preview->setSlidePixmap(QPixmap());
 		return;
 	}
+
 	wchar_t tempW[MAX_PATH] = {};
 	GetTempPathW(MAX_PATH, tempW);
 	QString path = QString::fromWCharArray(tempW) + "obs_ppt_next.png";
 	m_lastThumbPath = path;
 	QPixmap px(path);
 	m_preview->setSlidePixmap(px.isNull() ? QPixmap() : px);
+	(void)totalSlides;
 }
 
 void NextSlideDock::applyConnectedState(bool connected)
@@ -199,10 +188,6 @@ void NextSlideDock::applyConnectedState(bool connected)
 		m_lastThumbPath.clear();
 	}
 }
-
-// ============================================================
-//  NotesDock  (notes + navigation)
-// ============================================================
 
 NotesDock::NotesDock(ppt::ComBridge *bridge, QWidget *parent) : QWidget(parent), m_bridge(bridge)
 {
@@ -218,7 +203,6 @@ void NotesDock::buildUi()
 	vbox->setContentsMargins(6, 6, 6, 6);
 	vbox->setSpacing(6);
 
-	// "NEXT SLIDE NOTES" header
 	QLabel *hdr = new QLabel(obs_module_text("PPT.NextSlideDock.NextNotes"), this);
 	{
 		QFont f = hdr->font();
@@ -229,7 +213,6 @@ void NotesDock::buildUi()
 	}
 	vbox->addWidget(hdr);
 
-	// Notes text area
 	m_notes = new QTextEdit(this);
 	m_notes->setReadOnly(true);
 	m_notes->setPlaceholderText(obs_module_text("PPT.NextSlideDock.NoNotes"));
@@ -242,7 +225,6 @@ void NotesDock::buildUi()
 			       "}");
 	vbox->addWidget(m_notes, 1);
 
-	// Prev / Next buttons
 	QHBoxLayout *btnRow = new QHBoxLayout();
 	btnRow->setSpacing(6);
 
@@ -301,9 +283,6 @@ void NotesDock::onNextClicked()
 		m_bridge->NextSlide();
 }
 
-// ============================================================
-//  Registration
-// ============================================================
 
 void RegisterDocks(ppt::ComBridge *bridge)
 {

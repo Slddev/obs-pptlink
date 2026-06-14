@@ -162,7 +162,58 @@ std::wstring DispGetStr(IDispatch *pDisp, const wchar_t *name)
 	return r;
 }
 
-} // namespace
+IDispatch *FindNextVisibleSlide(IDispatch *pSlides, int fromIndex, int total)
+{
+	if (!pSlides || fromIndex >= total)
+		return nullptr;
+
+	DISPID itemId;
+	BSTR bname = SysAllocString(L"Item");
+	HRESULT hr = pSlides->GetIDsOfNames(IID_NULL, &bname, 1, LOCALE_USER_DEFAULT, &itemId);
+	SysFreeString(bname);
+	if (FAILED(hr))
+		return nullptr;
+
+	for (int idx = fromIndex + 1; idx <= total; ++idx) {
+		VARIANT arg, res;
+		VariantInit(&arg);
+		VariantInit(&res);
+		arg.vt = VT_I4;
+		arg.lVal = idx;
+		DISPPARAMS dp{&arg, nullptr, 1, 0};
+		pSlides->Invoke(itemId, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &dp, &res, nullptr, nullptr);
+
+		if (res.vt != VT_DISPATCH || !res.pdispVal) {
+			VariantClear(&res);
+			continue;
+		}
+
+		IDispatch *pSlide = res.pdispVal;
+
+		bool hidden = false;
+		IDispatch *pTrans = DispGetObj(pSlide, L"SlideShowTransition");
+		if (pTrans) {
+			VARIANT vh;
+			VariantInit(&vh);
+			if (SUCCEEDED(DispGetProp(pTrans, L"Hidden", &vh))) {
+				if (vh.vt == VT_BOOL)
+					hidden = (vh.boolVal != VARIANT_FALSE);
+				else if (SUCCEEDED(VariantChangeType(&vh, &vh, 0, VT_BOOL)))
+					hidden = (vh.boolVal != VARIANT_FALSE);
+				VariantClear(&vh);
+			}
+			pTrans->Release();
+		}
+
+		if (!hidden)
+			return pSlide;
+
+		pSlide->Release();
+	}
+	return nullptr;
+}
+
+}
 
 namespace ppt {
 
@@ -394,20 +445,8 @@ void ComBridge::PollState()
 	}
 	m_consecutiveFailures = 0;
 
-	if (cur == 0) {
-		if (m_lastSlideIndex > 0) {
-			m_lastSlideIndex = 0;
-			SlideInfo inactive;
-			inactive.slideshowActive = false;
-			{
-				std::lock_guard<std::mutex> lk(m_mutex);
-				m_state = inactive;
-			}
-			if (OnSlideChanged)
-				OnSlideChanged(inactive);
-		}
+	if (cur == 0)
 		return;
-	}
 
 	int total = 0;
 	HWND showHwnd = nullptr;
@@ -444,19 +483,17 @@ void ComBridge::PollState()
 				pSlide->Release();
 			}
 
-			if (cur < total) {
-				IDispatch *pNext = getSlide(cur + 1);
-				if (pNext) {
-					nextNotes = GetNotesText(pNext);
-					if (cur != m_lastExportedIndex) {
-						wchar_t tempPath[MAX_PATH];
-						GetTempPathW(MAX_PATH, tempPath);
-						std::wstring outPath = std::wstring(tempPath) + L"obs_ppt_next.png";
-						if (SUCCEEDED(DispCallExport(pNext, outPath.c_str(), 960, 540)))
-							m_lastExportedIndex = cur;
-					}
-					pNext->Release();
+			IDispatch *pNext = FindNextVisibleSlide(pSlides, cur, total);
+			if (pNext) {
+				nextNotes = GetNotesText(pNext);
+				if (cur != m_lastExportedIndex) {
+					wchar_t tempPath[MAX_PATH];
+					GetTempPathW(MAX_PATH, tempPath);
+					std::wstring outPath = std::wstring(tempPath) + L"obs_ppt_next.png";
+					if (SUCCEEDED(DispCallExport(pNext, outPath.c_str(), 960, 540)))
+						m_lastExportedIndex = cur;
 				}
+				pNext->Release();
 			}
 			pSlides->Release();
 		}

@@ -33,7 +33,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace dock {
 
-// ── Shared preview label (unchanged) ────────────────────────
 class NextSlidePreviewLabel : public QLabel {
 	Q_OBJECT
 public:
@@ -49,14 +48,12 @@ private:
 	QPixmap m_source;
 };
 
-// ── Dock 1: preview + counter ────────────────────────────────
 class NextSlideDock : public QWidget {
 	Q_OBJECT
 public:
 	explicit NextSlideDock(ppt::ComBridge *bridge, QWidget *parent = nullptr);
 	~NextSlideDock();
 
-	// Called by NotesDock so both docks share one timer
 	void poll();
 
 private slots:
@@ -79,7 +76,6 @@ private:
 	QString m_lastThumbPath;
 };
 
-// ── Dock 2: notes + navigation buttons ──────────────────────
 class NotesDock : public QWidget {
 	Q_OBJECT
 public:
@@ -101,7 +97,6 @@ private:
 	QPushButton *m_btnNext = nullptr;
 };
 
-// ── Registration ─────────────────────────────────────────────
 void RegisterDocks(ppt::ComBridge *bridge);
 
 } // namespace dock
