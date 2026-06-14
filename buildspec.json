@@ -35,7 +35,7 @@
   },
   "name": "obs-pptlink",
   "displayName": "Live PowerPoint capture plugin for OBS Studio on Windows.",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "author": "Slddev",
   "website": "https://sappy.eu.org",
   "email": "me@sappy.eu.org"
