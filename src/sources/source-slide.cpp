@@ -141,13 +141,7 @@ static void slide_source_render(void *data, gs_effect_t *effect)
 		ctx->capture.StopCapture();
 	}
 
-	gs_texture_t *texture = nullptr;
-	ctx->capture.AcquireLatestFrame(texture);
-
-	if (!texture)
-		return;
-
-	obs_source_draw(texture, 0, 0, 0, 0, false);
+	ctx->RenderFrame(effect);
 }
 
 void SlideSource::TryStartCapture()
@@ -164,32 +158,38 @@ void SlideSource::TryStartCapture()
 
 void SlideSource::RenderFrame(gs_effect_t *effect)
 {
-	(void)effect;
-
 	gs_texture_t *tex = nullptr;
-	bool hasNew = capture.AcquireLatestFrame(tex);
+	capture.AcquireLatestFrame(tex);
 
-	if (hasNew && tex) {
+	if (tex)
 		texture = tex;
-	}
 
-	if (!texture) {
+	if (!texture)
 		return;
-	}
 
 	uint32_t w = gs_texture_get_width(texture);
 	uint32_t h = gs_texture_get_height(texture);
 
-	if (!w || !h) {
+	if (!w || !h)
 		return;
-	}
 
-	gs_effect_t *def = obs_get_base_effect(OBS_EFFECT_OPAQUE);
-	gs_eparam_t *image = gs_effect_get_param_by_name(def, "image");
+	gs_effect_t *eff = effect ? effect : obs_get_base_effect(OBS_EFFECT_OPAQUE);
+
+	gs_eparam_t *image = gs_effect_get_param_by_name(eff, "image");
 	gs_effect_set_texture(image, texture);
 
-	while (gs_effect_loop(def, "Draw")) {
+	if (effect) {
 		gs_draw_sprite(texture, 0, w, h);
+	} else {
+		gs_technique_t *tech = gs_effect_get_technique(eff, "Draw");
+		size_t passes = gs_technique_begin(tech);
+		for (size_t i = 0; i < passes; i++) {
+			if (gs_technique_begin_pass(tech, i)) {
+				gs_draw_sprite(texture, 0, w, h);
+				gs_technique_end_pass(tech);
+			}
+		}
+		gs_technique_end(tech);
 	}
 }
 
