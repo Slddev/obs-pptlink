@@ -17,9 +17,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "dock-next-slide.h"
+#include "dock-notes.h"
 #include <obs-module.h>
 #include <obs-frontend-api.h>
-#include <util/platform.h>
 #include <QPainter>
 #include <QResizeEvent>
 #include <QFont>
@@ -66,101 +66,6 @@ void NextSlidePreviewLabel::paintEvent(QPaintEvent *e)
 		return;
 	}
 	QLabel::paintEvent(e);
-}
-
-NotesDock::NotesDock(ppt::ComBridge *bridge, QWidget *parent) : QWidget(parent), m_bridge(bridge)
-{
-	setObjectName("PPTNotesDock");
-	buildUi();
-}
-
-NotesDock::~NotesDock() {}
-
-void NotesDock::buildUi()
-{
-	QVBoxLayout *vbox = new QVBoxLayout(this);
-	vbox->setContentsMargins(6, 6, 6, 6);
-	vbox->setSpacing(6);
-
-	QLabel *hdr = new QLabel(obs_module_text("PPT.NextSlideDock.NextNotes"), this);
-	{
-		QFont f = hdr->font();
-		f.setPointSize(8);
-		f.setLetterSpacing(QFont::AbsoluteSpacing, 1.5);
-		hdr->setFont(f);
-		hdr->setStyleSheet("color: #888;");
-	}
-	vbox->addWidget(hdr);
-
-	m_notes = new QTextEdit(this);
-	m_notes->setReadOnly(true);
-	m_notes->setPlaceholderText(obs_module_text("PPT.NextSlideDock.NoNotes"));
-	m_notes->setMinimumHeight(60);
-	m_notes->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-	m_notes->setStyleSheet("QTextEdit {"
-			       "  background:#1e1e1e; color:#ccc;"
-			       "  border:1px solid #333; border-radius:3px;"
-			       "  font-size:11px; padding:4px;"
-			       "}");
-	vbox->addWidget(m_notes, 1);
-
-	QHBoxLayout *btnRow = new QHBoxLayout();
-	btnRow->setSpacing(6);
-
-	m_btnPrev = new QPushButton(obs_module_text("PPT.NextSlideDock.Prev"), this);
-	m_btnNext = new QPushButton(obs_module_text("PPT.NextSlideDock.Next"), this);
-
-	m_btnNext->setDefault(true);
-	m_btnNext->setStyleSheet("QPushButton{background:#2d6a9f;color:#fff;border:none;"
-				 "border-radius:3px;padding:5px 16px;font-weight:bold;}"
-				 "QPushButton:hover{background:#3a7fbc;}"
-				 "QPushButton:pressed{background:#1d5a8f;}"
-				 "QPushButton:disabled{background:#333;color:#666;}");
-	m_btnPrev->setStyleSheet("QPushButton{background:#2a2a2a;color:#ccc;"
-				 "border:1px solid #444;border-radius:3px;padding:5px 16px;}"
-				 "QPushButton:hover{background:#383838;}"
-				 "QPushButton:pressed{background:#1c1c1c;}"
-				 "QPushButton:disabled{background:#222;color:#555;border-color:#333;}");
-
-	btnRow->addWidget(m_btnPrev);
-	btnRow->addWidget(m_btnNext);
-	vbox->addLayout(btnRow);
-
-	connect(m_btnPrev, &QPushButton::clicked, this, &NotesDock::onPrevClicked);
-	connect(m_btnNext, &QPushButton::clicked, this, &NotesDock::onNextClicked);
-}
-
-void NotesDock::updateFromInfo(const ppt::SlideInfo &info, bool connected)
-{
-	m_btnPrev->setEnabled(connected);
-	m_btnNext->setEnabled(connected);
-	m_notes->setEnabled(connected);
-
-	if (!connected) {
-		m_notes->clear();
-		return;
-	}
-
-	QString text;
-	if (!info.notes.empty()) {
-		size_t len = os_wcs_to_utf8(info.notes.c_str(), info.notes.length(), nullptr, 0);
-		std::string utf8(len, '\0');
-		os_wcs_to_utf8(info.notes.c_str(), info.notes.length(), &utf8[0], len + 1);
-		text = QString::fromUtf8(utf8.c_str());
-	}
-	m_notes->setPlainText(text);
-}
-
-void NotesDock::onPrevClicked()
-{
-	if (m_bridge)
-		m_bridge->PrevSlide();
-}
-
-void NotesDock::onNextClicked()
-{
-	if (m_bridge)
-		m_bridge->NextSlide();
 }
 
 NextSlideDock::NextSlideDock(ppt::ComBridge *bridge, QWidget *parent) : QWidget(parent), m_bridge(bridge)

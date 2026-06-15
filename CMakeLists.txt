@@ -85,7 +85,7 @@ target_sources(
     src/docks/dock-next-slide.h
     src/hotkeys.cpp
     src/hotkeys.h
-)
+ "src/docks/dock-notes.cpp" "src/docks/dock-notes.h")
 
 target_include_directories(
   ${CMAKE_PROJECT_NAME}

@@ -21,14 +21,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include "../com-bridge/ppt-com-bridge.h"
+#include "dock-notes.h"
 
 #include <QWidget>
 #include <QLabel>
 #include <QTimer>
-#include <QTextEdit>
-#include <QPushButton>
 #include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QFrame>
 
 namespace dock {
@@ -47,29 +45,6 @@ private:
 	void updateScaled();
 	QPixmap m_source;
 };
-
-class NotesDock : public QWidget {
-	Q_OBJECT
-public:
-	explicit NotesDock(ppt::ComBridge *bridge, QWidget *parent = nullptr);
-	~NotesDock();
-
-	void updateFromInfo(const ppt::SlideInfo &info, bool connected);
-
-private slots:
-	void onPrevClicked();
-	void onNextClicked();
-
-private:
-	void buildUi();
-
-	ppt::ComBridge *m_bridge = nullptr;
-	QTextEdit *m_notes = nullptr;
-	QPushButton *m_btnPrev = nullptr;
-	QPushButton *m_btnNext = nullptr;
-};
-
-class NotesDock;
 
 class NextSlideDock : public QWidget {
 	Q_OBJECT
