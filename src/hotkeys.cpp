@@ -31,7 +31,7 @@ static ppt::ComBridge *g_br = nullptr;
 
 static void SaveBindings()
 {
-	config_t *cfg = obs_frontend_get_global_config();
+	config_t *cfg = obs_frontend_get_user_config();
 	if (!cfg)
 		return;
 
@@ -65,7 +65,7 @@ static void SaveBindings()
 
 static void LoadBindings()
 {
-	config_t *cfg = obs_frontend_get_global_config();
+	config_t *cfg = obs_frontend_get_user_config();
 	if (!cfg)
 		return;
 
