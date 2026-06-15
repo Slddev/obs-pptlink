@@ -48,34 +48,6 @@ private:
 	QPixmap m_source;
 };
 
-class NextSlideDock : public QWidget {
-	Q_OBJECT
-public:
-	explicit NextSlideDock(ppt::ComBridge *bridge, QWidget *parent = nullptr);
-	~NextSlideDock();
-
-	void poll();
-
-private slots:
-	void onPollTimer();
-
-private:
-	void buildUi();
-	void loadThumbnail(int currentSlide, int totalSlides);
-	void applyConnectedState(bool connected);
-
-	ppt::ComBridge *m_bridge = nullptr;
-	QTimer *m_timer = nullptr;
-	NextSlidePreviewLabel *m_preview = nullptr;
-	QLabel *m_noSignal = nullptr;
-	QLabel *m_counter = nullptr;
-
-	bool m_lastConnected = false;
-	int m_lastSlide = -1;
-	int m_lastTotal = -1;
-	QString m_lastThumbPath;
-};
-
 class NotesDock : public QWidget {
 	Q_OBJECT
 public:
@@ -95,6 +67,37 @@ private:
 	QTextEdit *m_notes = nullptr;
 	QPushButton *m_btnPrev = nullptr;
 	QPushButton *m_btnNext = nullptr;
+};
+
+class NotesDock;
+
+class NextSlideDock : public QWidget {
+	Q_OBJECT
+public:
+	explicit NextSlideDock(ppt::ComBridge *bridge, QWidget *parent = nullptr);
+	~NextSlideDock();
+
+	void setNotesDock(NotesDock *notes) { m_notesDock = notes; }
+
+private slots:
+	void onPollTimer();
+
+private:
+	void buildUi();
+	void loadThumbnail(int currentSlide, int totalSlides);
+	void applyConnectedState(bool connected);
+
+	ppt::ComBridge *m_bridge = nullptr;
+	QTimer *m_timer = nullptr;
+	NextSlidePreviewLabel *m_preview = nullptr;
+	QLabel *m_noSignal = nullptr;
+	QLabel *m_counter = nullptr;
+	NotesDock *m_notesDock = nullptr;
+
+	bool m_lastConnected = false;
+	int m_lastSlide = -1;
+	int m_lastTotal = -1;
+	QString m_lastThumbPath;
 };
 
 void RegisterDocks(ppt::ComBridge *bridge);
