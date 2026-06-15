@@ -57,7 +57,7 @@ if(WIN32)
     PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN WINVER=0x0A00 _WIN32_WINNT=0x0A00 PLUGIN_VERSION="${CMAKE_PROJECT_VERSION}"
   )
 else()
-  message(FATAL_ERROR "obs-pptlink only supports Windows (requires COM + WGC)")
+  message(FATAL_ERROR "PPTLink only supports Windows (requires COM + WGC)")
 endif()
 
 target_sources(

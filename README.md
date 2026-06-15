@@ -1,4 +1,4 @@
-# obs-pptlink
+# PPTLink
 
 Live PowerPoint capture plugin for OBS Studio on Windows.  
 Captures animations, transitions, and embedded video natively using Windows Graphics Capture (WGC). Speaker notes and slide control run through PowerPoint's COM automation API.

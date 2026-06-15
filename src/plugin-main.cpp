@@ -1,5 +1,5 @@
 /*
-obs-pptlink
+PPTLink
 Copyright (C) 2026 Slddev me@sappy.eu.org
 
 This program is free software; you can redistribute it and/or modify
@@ -48,11 +48,11 @@ MODULE_EXPORT const char *obs_module_description()
 
 MODULE_EXPORT bool obs_module_load()
 {
-	blog(LOG_INFO, "[obs-pptlink] Loading obs-pptlink v" PLUGIN_VERSION);
+	blog(LOG_INFO, "[PPTLink] Loading PPTLink v" PLUGIN_VERSION);
 
 	// Check WGC availability before anything else
 	if (!wgc::IsWGCSupported()) {
-		blog(LOG_ERROR, "[obs-pptlink] Windows Graphics Capture is not supported "
+		blog(LOG_ERROR, "[PPTLink] Windows Graphics Capture is not supported "
 				"on this system (requires Windows 10 1903 / build 18362 or later). "
 				"Plugin will not load.");
 		return false;
@@ -62,11 +62,11 @@ MODULE_EXPORT bool obs_module_load()
 	g_bridge = new ppt::ComBridge();
 
 	g_bridge->OnConnectionChanged = [](bool connected) {
-		blog(LOG_INFO, "[obs-pptlink] PowerPoint %s", connected ? "connected" : "disconnected");
+		blog(LOG_INFO, "[PPTLink] PowerPoint %s", connected ? "connected" : "disconnected");
 	};
 
 	if (!g_bridge->Start()) {
-		blog(LOG_ERROR, "[obs-pptlink] Failed to start COM bridge");
+		blog(LOG_ERROR, "[PPTLink] Failed to start COM bridge");
 		delete g_bridge;
 		g_bridge = nullptr;
 		return false;
@@ -97,13 +97,13 @@ MODULE_EXPORT bool obs_module_load()
 	Gdiplus::GdiplusStartupInput si;
 	Gdiplus::GdiplusStartup(&g_gdiplusToken, &si, nullptr);
 
-	blog(LOG_INFO, "[obs-pptlink] Plugin loaded successfully");
+	blog(LOG_INFO, "[PPTLink] Plugin loaded successfully");
 	return true;
 }
 
 MODULE_EXPORT void obs_module_unload()
 {
-	blog(LOG_INFO, "[obs-pptlink] Unloading obs-pptlink");
+	blog(LOG_INFO, "[PPTLink] Unloading PPTLink");
 
 	hotkeys::Unregister();
 
@@ -118,7 +118,7 @@ MODULE_EXPORT void obs_module_unload()
 		g_bridge = nullptr;
 	}
 
-	blog(LOG_INFO, "[obs-pptlink] Plugin unloaded");
+	blog(LOG_INFO, "[PPTLink] Plugin unloaded");
 }
 
 } // extern "C"

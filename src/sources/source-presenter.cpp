@@ -1,5 +1,5 @@
 /*
-obs-pptlink
+PPTLink
 Copyright (C) 2026 Slddev me@sappy.eu.org
 
 This program is free software; you can redistribute it and/or modify
@@ -239,7 +239,7 @@ static void *presenter_create(obs_data_t *settings, obs_source_t *source)
 
 	obs_source_update(source, settings);
 
-	blog(LOG_INFO, "[obs-pptlink] PresenterSource created");
+	blog(LOG_INFO, "[PPTLink] PresenterSource created");
 	return ctx;
 }
 
@@ -265,7 +265,7 @@ static void presenter_destroy(void *data)
 	obs_leave_graphics();
 
 	delete ctx;
-	blog(LOG_INFO, "[obs-pptlink] PresenterSource destroyed");
+	blog(LOG_INFO, "[PPTLink] PresenterSource destroyed");
 }
 
 static void presenter_update(void *data, obs_data_t *settings)
@@ -602,7 +602,7 @@ void RegisterPresenterSource()
 	info.get_defaults = presenter_get_defaults;
 
 	obs_register_source(&info);
-	blog(LOG_INFO, "[obs-pptlink] Registered source: ppt_presenter_source");
+	blog(LOG_INFO, "[PPTLink] Registered source: ppt_presenter_source");
 }
 
 } // namespace sources

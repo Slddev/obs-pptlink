@@ -1,6 +1,5 @@
-#pragma once
 /*
-obs-pptlink
+PPTLink
 Copyright (C) 2026 Slddev me@sappy.eu.org
 
 This program is free software; you can redistribute it and/or modify
@@ -16,6 +15,8 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along
 with this program. If not, see <https://www.gnu.org/licenses/>
 */
+
+#pragma once
 
 #include <obs-module.h>
 #include "../wgc-capture/wgc-capture.h"

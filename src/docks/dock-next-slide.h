@@ -1,5 +1,5 @@
 ﻿/*
-obs-pptlink
+PPTLink
 Copyright (C) 2026 Slddev me@sappy.eu.org
 
 This program is free software; you can redistribute it and/or modify

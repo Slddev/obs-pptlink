@@ -1,30 +1,30 @@
 {
   "dependencies": {
     "obs-studio": {
-      "version": "32.1.2",
+      "version": "31.1.1",
       "baseUrl": "https://github.com/obsproject/obs-studio/archive/refs/tags",
       "label": "OBS sources",
       "hashes": {
-        "windows-x64": "21cba22292985cf0da967d5c618999b40eaa32b73d2ab8b06154b5ea1b3d3798"
+        "windows-x64": "2c8427c10b55ac6d68008df2e9a3e82f4647aaad18f105e30d4713c2de678ccf"
       }
     },
     "prebuilt": {
-      "version": "2025-08-23",
+      "version": "2025-07-11",
       "baseUrl": "https://github.com/obsproject/obs-deps/releases/download",
       "label": "Pre-Built obs-deps",
       "hashes": {
-        "windows-x64": "8de229cff6f1981508c0eb646b35e644633a5855787b9f5d3b90ae2aeb87ffc1"
+        "windows-x64": "c8c642c1070dc31ce9a0f1e4cef5bb992f4bff4882255788b5da12129e85caa7"
       }
     },
     "qt6": {
-      "version": "2025-08-23",
+      "version": "2025-07-11",
       "baseUrl": "https://github.com/obsproject/obs-deps/releases/download",
       "label": "Pre-Built Qt6",
       "hashes": {
-        "windows-x64": "c62e82483bc7c0bf199e8ac3220c66a85a6e8a0cd69a05b6d44f873b830e415f"
+        "windows-x64": "0e76bf0555dd5382838850b748d3dcfab44a1e1058441309ab54e1a65b156d0a"
       },
       "debugSymbols": {
-        "windows-x64": "ef4954fa18c818103f63415776624fa1e403c3faaa7b0a7b259000cc35b2c9fc"
+        "windows-x64": "11b7be92cf66a273299b8f3515c07a5cfb61614b59a4e67f7fc5ecba5e2bdf21"
       }
     }
   },
@@ -34,7 +34,7 @@
     }
   },
   "name": "obs-pptlink",
-  "displayName": "Live PowerPoint capture plugin for OBS Studio on Windows.",
+  "displayName": "PPTLink",
   "version": "0.9.2",
   "author": "Slddev",
   "website": "https://sappy.eu.org",

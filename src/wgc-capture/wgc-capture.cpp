@@ -1,5 +1,5 @@
 ﻿/*
-obs-pptlink
+PPTLink
 Copyright (C) 2026 Slddev me@sappy.eu.org
 
 This program is free software; you can redistribute it and/or modify
@@ -87,13 +87,13 @@ static winrt::Windows::Graphics::DirectX::Direct3D11::IDirect3DDevice DeviceToWi
 bool CaptureSession::Init(gs_device_t * /*obsDevice*/)
 {
 	if (!IsWGCSupported()) {
-		blog(LOG_ERROR, "[obs-pptlink] WGC not supported on this OS version.");
+		blog(LOG_ERROR, "[PPTLink] WGC not supported on this OS version.");
 		return false;
 	}
 
 	m_obsDevice = static_cast<ID3D11Device *>(gs_get_device_obj());
 	if (!m_obsDevice) {
-		blog(LOG_ERROR, "[obs-pptlink] gs_get_device_obj returned null");
+		blog(LOG_ERROR, "[PPTLink] gs_get_device_obj returned null");
 		return false;
 	}
 	m_obsDevice->GetImmediateContext(&m_obsContext);
@@ -101,7 +101,7 @@ bool CaptureSession::Init(gs_device_t * /*obsDevice*/)
 	try {
 		m_wrtDevice = DeviceToWinRT(m_obsDevice);
 	} catch (winrt::hresult_error const &e) {
-		blog(LOG_ERROR, "[obs-pptlink] DeviceToWinRT failed: %ls", e.message().c_str());
+		blog(LOG_ERROR, "[PPTLink] DeviceToWinRT failed: %ls", e.message().c_str());
 		return false;
 	}
 
@@ -111,11 +111,11 @@ bool CaptureSession::Init(gs_device_t * /*obsDevice*/)
 bool CaptureSession::StartCapture(HWND hwnd)
 {
 	if (!hwnd || !IsWindow(hwnd)) {
-		blog(LOG_WARNING, "[obs-pptlink] StartCapture: invalid HWND %p", hwnd);
+		blog(LOG_WARNING, "[PPTLink] StartCapture: invalid HWND %p", hwnd);
 		return false;
 	}
 	if (!m_obsDevice) {
-		blog(LOG_ERROR, "[obs-pptlink] StartCapture: not initialised");
+		blog(LOG_ERROR, "[PPTLink] StartCapture: not initialised");
 		return false;
 	}
 
@@ -180,7 +180,7 @@ bool CaptureSession::StartCapture(HWND hwnd)
 		return true;
 
 	} catch (winrt::hresult_error const &e) {
-		blog(LOG_ERROR, "[obs-pptlink] StartCapture failed: %ls", e.message().c_str());
+		blog(LOG_ERROR, "[PPTLink] StartCapture failed: %ls", e.message().c_str());
 		StopCapture();
 		return false;
 	}
@@ -211,7 +211,7 @@ void CaptureSession::FreezeLastFrame()
 
 	HRESULT hr = m_obsDevice->CreateTexture2D(&desc, nullptr, m_frozenD3DTex.put());
 	if (FAILED(hr)) {
-		blog(LOG_WARNING, "[obs-pptlink] FreezeLastFrame: CreateTexture2D failed 0x%08X", hr);
+		blog(LOG_WARNING, "[PPTLink] FreezeLastFrame: CreateTexture2D failed 0x%08X", hr);
 		return;
 	}
 
@@ -219,7 +219,7 @@ void CaptureSession::FreezeLastFrame()
 
 	m_frozenTex = gs_texture_wrap_obj(m_frozenD3DTex.get());
 	if (!m_frozenTex) {
-		blog(LOG_WARNING, "[obs-pptlink] FreezeLastFrame: gs_texture_wrap_obj failed");
+		blog(LOG_WARNING, "[PPTLink] FreezeLastFrame: gs_texture_wrap_obj failed");
 		m_frozenD3DTex = nullptr;
 		return;
 	}
@@ -388,7 +388,7 @@ void CaptureSession::OnFrameArrivedInternal(winrt::Windows::Graphics::Capture::D
 
 			HRESULT hr = m_obsDevice->CreateTexture2D(&desc, nullptr, m_renderTex.put());
 			if (FAILED(hr)) {
-				blog(LOG_ERROR, "[obs-pptlink] CreateTexture2D failed: 0x%08X", hr);
+				blog(LOG_ERROR, "[PPTLink] CreateTexture2D failed: 0x%08X", hr);
 				return;
 			}
 
@@ -446,7 +446,7 @@ bool CaptureSession::AcquireLatestFrame(gs_texture_t *&texture)
 		m_obsTexture = gs_texture_wrap_obj(m_renderTex.get());
 		if (!m_obsTexture) {
 			blog(LOG_ERROR,
-			     "[obs-pptlink] gs_texture_wrap_obj failed -- falling back to gs_texture_create");
+			     "[PPTLink] gs_texture_wrap_obj failed -- falling back to gs_texture_create");
 			m_obsTexture = gs_texture_create(m_lastWidth, m_lastHeight, GS_BGRA, 1, nullptr, 0);
 			if (!m_obsTexture) {
 				texture = nullptr;

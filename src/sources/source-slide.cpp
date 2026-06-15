@@ -1,5 +1,5 @@
 /*
-obs-pptlink
+PPTLink
 Copyright (C) 2026 Slddev me@sappy.eu.org
 
 This program is free software; you can redistribute it and/or modify
@@ -39,7 +39,7 @@ static void *slide_source_create(obs_data_t *settings, obs_source_t *source)
 	obs_enter_graphics();
 
 	if (!ctx->capture.Init(nullptr)) {
-		blog(LOG_ERROR, "[obs-pptlink] SlideSource: WGC init failed");
+		blog(LOG_ERROR, "[PPTLink] SlideSource: WGC init failed");
 	}
 
 	ctx->capture.OnFrameArrived = [source]() {
@@ -225,7 +225,7 @@ void RegisterSlideSource()
 	info.get_defaults = slide_source_get_defaults;
 
 	obs_register_source(&info);
-	blog(LOG_INFO, "[obs-pptlink] Registered source: ppt_slide_source");
+	blog(LOG_INFO, "[PPTLink] Registered source: ppt_slide_source");
 }
 
 } // namespace sources
