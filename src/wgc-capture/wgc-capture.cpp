@@ -445,8 +445,7 @@ bool CaptureSession::AcquireLatestFrame(gs_texture_t *&texture)
 	if (!m_obsTexture) {
 		m_obsTexture = gs_texture_wrap_obj(m_renderTex.get());
 		if (!m_obsTexture) {
-			blog(LOG_ERROR,
-			     "[PPTLink] gs_texture_wrap_obj failed -- falling back to gs_texture_create");
+			blog(LOG_ERROR, "[PPTLink] gs_texture_wrap_obj failed -- falling back to gs_texture_create");
 			m_obsTexture = gs_texture_create(m_lastWidth, m_lastHeight, GS_BGRA, 1, nullptr, 0);
 			if (!m_obsTexture) {
 				texture = nullptr;

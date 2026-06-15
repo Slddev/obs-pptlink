@@ -102,8 +102,7 @@ static void LoadBindings()
 
 static void OnFrontendEvent(enum obs_frontend_event event, void *)
 {
-	if (event == OBS_FRONTEND_EVENT_EXIT ||
-	    event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP)
+	if (event == OBS_FRONTEND_EVENT_EXIT || event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP)
 		SaveBindings();
 }
 

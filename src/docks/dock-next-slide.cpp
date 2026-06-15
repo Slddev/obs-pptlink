@@ -283,7 +283,6 @@ void NotesDock::onNextClicked()
 		m_bridge->NextSlide();
 }
 
-
 void RegisterDocks(ppt::ComBridge *bridge)
 {
 	obs_frontend_push_ui_translation(obs_module_get_string);
