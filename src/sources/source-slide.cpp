@@ -111,7 +111,11 @@ static void slide_source_tick(void *data, float seconds)
 		return;
 	ctx->pollAccum = 0.0f;
 
-	HWND hwnd = wgc::FindSlideshowWindow(nullptr);
+	HWND hwnd = nullptr;
+	if (ctx->bridge && ctx->bridge->IsConnected())
+		hwnd = ctx->bridge->GetSlideInfo().slideshowHwnd;
+	if (!hwnd)
+		hwnd = wgc::FindSlideshowWindow(nullptr);
 
 	if (hwnd != ctx->lastHwnd) {
 		ctx->lastHwnd = hwnd;

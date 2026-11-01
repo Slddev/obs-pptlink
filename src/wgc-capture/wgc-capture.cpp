@@ -318,9 +318,6 @@ void CaptureSession::OnFrameArrivedInternal(winrt::Windows::Graphics::Capture::D
 	if (!frame)
 		return;
 
-	if (m_mdiClient && !IsSlideshowTitle(m_hwnd))
-		return;
-
 	if (ShouldAcceptFrame && !ShouldAcceptFrame())
 		return;
 
