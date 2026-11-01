@@ -384,16 +384,25 @@ static void presenter_tick(void *data, float /*seconds*/)
 	ctx->currentNotes = info.notes;
 	ctx->nextNotes = info.nextNotes;
 
+	bool colorChanged = ctx->colText != ctx->shownTextColor;
+	ctx->shownTextColor = ctx->colText;
+
 	if (ctx->notes_source) {
 		uint32_t wWidth = ctx->layout.notes.cx > 40 ? ctx->layout.notes.cx - 40 : 400;
-		UpdateTextSource(ctx->notes_source,
-				 ctx->currentNotes.empty() ? L"No speaker notes." : ctx->currentNotes, ctx->colText, 24,
-				 true, wWidth);
+		std::wstring notes = ctx->currentNotes.empty() ? L"No speaker notes." : ctx->currentNotes;
+		if (colorChanged || wWidth != ctx->shownWrapWidth || notes != ctx->shownNotes) {
+			UpdateTextSource(ctx->notes_source, notes, ctx->colText, 24, true, wWidth);
+			ctx->shownNotes = notes;
+			ctx->shownWrapWidth = wWidth;
+		}
 	}
 	if (ctx->counter_source) {
 		wchar_t cBuf[64];
 		swprintf_s(cBuf, L"Slide %d / %d", ctx->currentSlide, ctx->totalSlides);
-		UpdateTextSource(ctx->counter_source, cBuf, ctx->colText, 28, false, 0);
+		if (colorChanged || ctx->shownCounter != cBuf) {
+			UpdateTextSource(ctx->counter_source, cBuf, ctx->colText, 28, false, 0);
+			ctx->shownCounter = cBuf;
+		}
 	}
 
 	// Load next preview thumbnail dynamically when slide changes

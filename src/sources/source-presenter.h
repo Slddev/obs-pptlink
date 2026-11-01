@@ -43,6 +43,10 @@ struct PresenterSource {
 	// Private text handles for native OBS font processing
 	obs_source_t *notes_source = nullptr;
 	obs_source_t *counter_source = nullptr;
+	std::wstring shownNotes;
+	std::wstring shownCounter;
+	uint32_t shownTextColor = 0;
+	uint32_t shownWrapWidth = 0;
 
 	std::wstring currentNotes;
 	std::wstring nextNotes;
