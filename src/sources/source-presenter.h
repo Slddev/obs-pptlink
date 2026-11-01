@@ -59,8 +59,10 @@ struct PresenterSource {
 		gs_rect controls = {};
 	} layout;
 
+	enum class LayoutPreset { Classic, TopBottom, NotesFocused, NextDominant, Custom };
+
 	std::string themePreset = "yami";
-	std::string layoutPreset = "classic";
+	LayoutPreset layoutPreset = LayoutPreset::Classic;
 
 	float splitX = 0.65f;
 	float splitY = 0.85f;

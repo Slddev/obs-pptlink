@@ -165,7 +165,7 @@ void PresenterSource::ComputeLayout()
 
 	int availableH = H - barH;
 
-	if (layoutPreset == "classic") {
+	if (layoutPreset == LayoutPreset::Classic) {
 		int notesH = (int)(availableH * 0.15f);
 		int slidesH = availableH - notesH;
 		int leftW = (int)(W * 0.65f);
@@ -174,7 +174,7 @@ void PresenterSource::ComputeLayout()
 		layout.next = {leftW, 0, W - leftW, slidesH};
 		layout.notes = {0, slidesH, W, notesH};
 
-	} else if (layoutPreset == "top_bottom") {
+	} else if (layoutPreset == LayoutPreset::TopBottom) {
 		int notesH = (int)(availableH * 0.30f);
 		int remainingH = availableH - notesH;
 		int currentH = (int)(remainingH * 0.60f);
@@ -184,7 +184,7 @@ void PresenterSource::ComputeLayout()
 		layout.next = {0, currentH, W, nextH};
 		layout.notes = {0, remainingH, W, notesH};
 
-	} else if (layoutPreset == "notes_focused") {
+	} else if (layoutPreset == LayoutPreset::NotesFocused) {
 		int notesH = (int)(availableH * 0.60f);
 		int slidesH = availableH - notesH;
 		int halfW = W / 2;
@@ -193,7 +193,7 @@ void PresenterSource::ComputeLayout()
 		layout.next = {halfW, 0, halfW, slidesH};
 		layout.notes = {0, slidesH, W, notesH};
 
-	} else if (layoutPreset == "next_dominant") {
+	} else if (layoutPreset == LayoutPreset::NextDominant) {
 		int notesH = (int)(availableH * 0.15f);
 		int slidesH = availableH - notesH;
 		int leftW = (int)(W * 0.35f);
@@ -281,8 +281,19 @@ static void presenter_update(void *data, obs_data_t *settings)
 	ctx->splitX = (float)obs_data_get_double(settings, "split_x");
 	ctx->splitY = (float)obs_data_get_double(settings, "split_y");
 
-	const char *layout = obs_data_get_string(settings, "layout_preset");
-	ctx->layoutPreset = layout ? layout : "classic";
+	using LayoutPreset = PresenterSource::LayoutPreset;
+	const char *layoutStr = obs_data_get_string(settings, "layout_preset");
+	std::string layout = layoutStr ? layoutStr : "classic";
+	if (layout == "classic")
+		ctx->layoutPreset = LayoutPreset::Classic;
+	else if (layout == "top_bottom")
+		ctx->layoutPreset = LayoutPreset::TopBottom;
+	else if (layout == "notes_focused")
+		ctx->layoutPreset = LayoutPreset::NotesFocused;
+	else if (layout == "next_dominant")
+		ctx->layoutPreset = LayoutPreset::NextDominant;
+	else
+		ctx->layoutPreset = LayoutPreset::Custom;
 
 	const char *theme = obs_data_get_string(settings, "theme_preset");
 	ctx->themePreset = theme ? theme : "yami";
