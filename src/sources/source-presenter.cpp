@@ -22,41 +22,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <graphics/graphics.h>
 #include <graphics/vec4.h>
 #include <util/platform.h>
-#include <chrono>
 #include <cstring>
-#include <vector>
-#include <gdiplus.h>
 
 extern ppt::ComBridge *g_bridge;
 extern wgc::SharedCapture *g_capture;
-
-namespace {
-
-// Self-contained decoder using standard Windows GDI+
-bool LoadTextureFromFile(const std::wstring &path, std::vector<uint32_t> &pixels, uint32_t &w, uint32_t &h)
-{
-	bool success = false;
-	{
-		Gdiplus::Bitmap bmp(path.c_str());
-		if (bmp.GetLastStatus() == Gdiplus::Ok) {
-			w = bmp.GetWidth();
-			h = bmp.GetHeight();
-			pixels.resize(w * h);
-
-			Gdiplus::Rect rect(0, 0, w, h);
-			Gdiplus::BitmapData data;
-			if (bmp.LockBits(&rect, Gdiplus::ImageLockModeRead, PixelFormat32bppARGB, &data) ==
-			    Gdiplus::Ok) {
-				std::memcpy(pixels.data(), data.Scan0, w * h * 4);
-				bmp.UnlockBits(&data);
-				success = true;
-			}
-		}
-	}
-	return success;
-}
-
-} // namespace
 
 namespace sources {
 
@@ -417,49 +386,19 @@ static void presenter_tick(void *data, float /*seconds*/)
 		}
 	}
 
-	if (ctx->nextLoad.valid() && ctx->nextLoad.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-		PresenterSource::NextThumb thumb = ctx->nextLoad.get();
-		if (thumb.slide == ctx->nextTexSlide) {
-			obs_enter_graphics();
-			if (ctx->nextTex) {
-				gs_texture_destroy(ctx->nextTex);
-				ctx->nextTex = nullptr;
-			}
-			if (thumb.loaded) {
-				const uint8_t *pData = reinterpret_cast<const uint8_t *>(thumb.pixels.data());
-				ctx->nextTex = gs_texture_create(thumb.width, thumb.height, GS_BGRA, 1, &pData, 0);
-			}
-			obs_leave_graphics();
-			if (thumb.retry)
-				ctx->nextRetryAt = os_gettime_ns() + 500000000ULL;
-		}
-	}
-
-	bool retryDue = ctx->nextRetryAt != 0 && os_gettime_ns() >= ctx->nextRetryAt;
-	if (ctx->currentSlide > 0 && (ctx->currentSlide != ctx->nextTexSlide || retryDue) && !ctx->nextLoad.valid()) {
-		int slide = ctx->currentSlide;
-		std::wstring path = info.nextSlide > 0 ? ppt::GetSlideThumbPath(info.nextSlide) : std::wstring();
-		ctx->nextTexSlide = slide;
-		ctx->nextRetryAt = 0;
-		ctx->nextLoad = std::async(std::launch::async, [slide, path]() {
-			PresenterSource::NextThumb thumb;
-			thumb.slide = slide;
-			thumb.loaded = !path.empty() &&
-				       LoadTextureFromFile(path, thumb.pixels, thumb.width, thumb.height);
-			thumb.retry = !path.empty() && !thumb.loaded;
-			return thumb;
-		});
-	}
-
-	if (ctx->currentSlide == 0 && ctx->nextTexSlide != -1) {
+	std::shared_ptr<const ppt::SlideThumb> thumb = ctx->currentSlide > 0 ? info.nextThumb : nullptr;
+	if (thumb != ctx->nextThumb) {
+		ctx->nextThumb = thumb;
 		obs_enter_graphics();
 		if (ctx->nextTex) {
 			gs_texture_destroy(ctx->nextTex);
 			ctx->nextTex = nullptr;
 		}
+		if (thumb) {
+			const uint8_t *pData = reinterpret_cast<const uint8_t *>(thumb->pixels.data());
+			ctx->nextTex = gs_texture_create(thumb->width, thumb->height, GS_BGRA, 1, &pData, 0);
+		}
 		obs_leave_graphics();
-		ctx->nextTexSlide = -1;
-		ctx->nextRetryAt = 0;
 	}
 }
 

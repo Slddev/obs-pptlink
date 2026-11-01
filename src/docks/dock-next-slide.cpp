@@ -24,6 +24,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPainter>
 #include <QResizeEvent>
 #include <QFont>
+#include <QImage>
 
 namespace dock {
 
@@ -168,24 +169,25 @@ void NextSlideDock::onPollTimer()
 		} else {
 			m_counter->setText("—");
 		}
-
-		loadThumbnail(info.currentSlide > 0 ? info.nextSlide : 0);
-	} else if (m_missingThumb > 0) {
-		loadThumbnail(m_missingThumb);
 	}
+
+	showThumbnail(info.currentSlide > 0 ? info.nextThumb : nullptr);
 }
 
-void NextSlideDock::loadThumbnail(int nextSlide)
+void NextSlideDock::showThumbnail(std::shared_ptr<const ppt::SlideThumb> thumb)
 {
-	if (nextSlide <= 0) {
-		m_missingThumb = 0;
+	if (thumb == m_thumb)
+		return;
+	m_thumb = std::move(thumb);
+
+	if (!m_thumb) {
 		m_preview->setSlidePixmap(QPixmap());
 		return;
 	}
 
-	QPixmap px(QString::fromStdWString(ppt::GetSlideThumbPath(nextSlide)));
-	m_missingThumb = px.isNull() ? nextSlide : 0;
-	m_preview->setSlidePixmap(px.isNull() ? QPixmap() : px);
+	QImage img(reinterpret_cast<const uchar *>(m_thumb->pixels.data()), m_thumb->width, m_thumb->height,
+		   m_thumb->width * 4, QImage::Format_ARGB32);
+	m_preview->setSlidePixmap(QPixmap::fromImage(img));
 }
 
 void NextSlideDock::applyConnectedState(bool connected)
@@ -196,7 +198,7 @@ void NextSlideDock::applyConnectedState(bool connected)
 	if (!connected) {
 		m_counter->setText("—");
 		m_lastSlide = m_lastTotal = -1;
-		m_missingThumb = 0;
+		showThumbnail(nullptr);
 	}
 }
 

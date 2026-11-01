@@ -59,7 +59,7 @@ private slots:
 
 private:
 	void buildUi();
-	void loadThumbnail(int nextSlide);
+	void showThumbnail(std::shared_ptr<const ppt::SlideThumb> thumb);
 	void applyConnectedState(bool connected);
 
 	ppt::ComBridge *m_bridge = nullptr;
@@ -72,7 +72,7 @@ private:
 	bool m_lastConnected = false;
 	int m_lastSlide = -1;
 	int m_lastTotal = -1;
-	int m_missingThumb = 0;
+	std::shared_ptr<const ppt::SlideThumb> m_thumb;
 };
 
 void RegisterDocks(ppt::ComBridge *bridge);

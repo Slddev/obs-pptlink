@@ -58,6 +58,9 @@ MODULE_EXPORT bool obs_module_load()
 		return false;
 	}
 
+	Gdiplus::GdiplusStartupInput si;
+	Gdiplus::GdiplusStartup(&g_gdiplusToken, &si, nullptr);
+
 	// Start the global COM bridge (STA thread)
 	g_bridge = new ppt::ComBridge();
 
@@ -69,6 +72,8 @@ MODULE_EXPORT bool obs_module_load()
 		obs_log(LOG_ERROR, "Failed to start COM bridge");
 		delete g_bridge;
 		g_bridge = nullptr;
+		Gdiplus::GdiplusShutdown(g_gdiplusToken);
+		g_gdiplusToken = 0;
 		return false;
 	}
 
@@ -85,9 +90,6 @@ MODULE_EXPORT bool obs_module_load()
 	// Register plugin-level hotkeys
 	hotkeys::Register(g_bridge);
 
-	Gdiplus::GdiplusStartupInput si;
-	Gdiplus::GdiplusStartup(&g_gdiplusToken, &si, nullptr);
-
 	obs_log(LOG_INFO, "Plugin loaded successfully");
 	return true;
 }
@@ -97,11 +99,6 @@ MODULE_EXPORT void obs_module_unload()
 	obs_log(LOG_INFO, "Unloading PPTLink");
 
 	hotkeys::Unregister();
-
-	if (g_gdiplusToken) {
-		Gdiplus::GdiplusShutdown(g_gdiplusToken);
-		g_gdiplusToken = 0;
-	}
 
 	if (g_capture) {
 		g_capture->Stop();
@@ -113,6 +110,11 @@ MODULE_EXPORT void obs_module_unload()
 		g_bridge->Stop();
 		delete g_bridge;
 		g_bridge = nullptr;
+	}
+
+	if (g_gdiplusToken) {
+		Gdiplus::GdiplusShutdown(g_gdiplusToken);
+		g_gdiplusToken = 0;
 	}
 
 	obs_log(LOG_INFO, "Plugin unloaded");

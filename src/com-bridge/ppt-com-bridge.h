@@ -34,6 +34,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <thread>
 #include <mutex>
 #include <deque>
+#include <memory>
 #include <vector>
 
 // Forward-declare PowerPoint COM types rather than importing the full
@@ -46,6 +47,13 @@ namespace ppt {
 
 class AppEventSink;
 
+// Decoded slide thumbnail, 32-bit BGRA pixels
+struct SlideThumb {
+	uint32_t width = 0;
+	uint32_t height = 0;
+	std::vector<uint32_t> pixels;
+};
+
 // ------------------------------------------------------------------
 // SlideInfo -- snapshot of current PPT state
 // ------------------------------------------------------------------
@@ -54,6 +62,7 @@ struct SlideInfo {
 	int totalSlides = 0;
 	int nextSlide = 0;  // 1-based next visible slide, 0 = none
 	std::wstring notes; // current slide speaker notes (plain text)
+	std::shared_ptr<const SlideThumb> nextThumb;
 	HWND slideshowHwnd = nullptr;
 	bool slideshowActive = false;
 };
@@ -114,6 +123,7 @@ private:
 	bool IsThumbCached(int index) const;
 	bool ExportThumb(IDispatch *pSlide, int index);
 	void ExportPrefetch();
+	std::shared_ptr<const SlideThumb> LoadThumb(int index);
 	void ClearThumbCache();
 
 	// Command queue for cross-thread calls
@@ -144,6 +154,9 @@ private:
 	int m_prefetchSlide = 0;
 	ULONGLONG m_prefetchDue = 0;
 	std::vector<bool> m_thumbCached;
+	std::shared_ptr<const SlideThumb> m_nextThumb;
+	std::shared_ptr<const SlideThumb> m_prefetchThumb;
+	int m_prefetchThumbSlide = 0;
 	ULONGLONG m_lastPollTick = 0;
 
 	// Command queue

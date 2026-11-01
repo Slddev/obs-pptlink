@@ -22,8 +22,32 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <oleauto.h>
 #include <ocidl.h>
+#include <cstring>
+#include <gdiplus.h>
 
 namespace {
+
+std::shared_ptr<const ppt::SlideThumb> DecodeThumb(const std::wstring &path)
+{
+	Gdiplus::Bitmap bmp(path.c_str());
+	if (bmp.GetLastStatus() != Gdiplus::Ok)
+		return nullptr;
+
+	auto thumb = std::make_shared<ppt::SlideThumb>();
+	thumb->width = bmp.GetWidth();
+	thumb->height = bmp.GetHeight();
+	thumb->pixels.resize(thumb->width * thumb->height);
+
+	Gdiplus::Rect rect(0, 0, thumb->width, thumb->height);
+	Gdiplus::BitmapData data;
+	if (bmp.LockBits(&rect, Gdiplus::ImageLockModeRead, PixelFormat32bppARGB, &data) != Gdiplus::Ok)
+		return nullptr;
+	for (uint32_t y = 0; y < thumb->height; ++y)
+		std::memcpy(&thumb->pixels[y * thumb->width], static_cast<uint8_t *>(data.Scan0) + y * data.Stride,
+			    thumb->width * 4);
+	bmp.UnlockBits(&data);
+	return thumb;
+}
 
 HRESULT DispGetProp(IDispatch *pDisp, const wchar_t *name, VARIANT *pVar)
 {
@@ -604,26 +628,38 @@ void ComBridge::ExportPrefetch()
 {
 	int index = m_prefetchSlide;
 	m_prefetchSlide = 0;
-	if (index < 1 || !m_pShow)
-		return;
-	if (IsThumbCached(index))
+	if (index < 1 || !m_pShow || index == m_prefetchThumbSlide)
 		return;
 
-	IDispatch *pPres = DispGetObj(m_pShow, L"Presentation");
-	if (!pPres)
-		return;
-	IDispatch *pSlides = DispGetObj(pPres, L"Slides");
-	pPres->Release();
-	if (!pSlides)
-		return;
+	if (!IsThumbCached(index)) {
+		IDispatch *pPres = DispGetObj(m_pShow, L"Presentation");
+		if (!pPres)
+			return;
+		IDispatch *pSlides = DispGetObj(pPres, L"Slides");
+		pPres->Release();
+		if (!pSlides)
+			return;
 
-	IDispatch *pSlide = DispGetItem(pSlides, index);
-	pSlides->Release();
-	if (!pSlide)
-		return;
+		IDispatch *pSlide = DispGetItem(pSlides, index);
+		pSlides->Release();
+		if (!pSlide)
+			return;
 
-	ExportThumb(pSlide, index);
-	pSlide->Release();
+		bool exported = ExportThumb(pSlide, index);
+		pSlide->Release();
+		if (!exported)
+			return;
+	}
+
+	m_prefetchThumb = DecodeThumb(GetSlideThumbPath(index));
+	m_prefetchThumbSlide = m_prefetchThumb ? index : 0;
+}
+
+std::shared_ptr<const SlideThumb> ComBridge::LoadThumb(int index)
+{
+	if (index == m_prefetchThumbSlide)
+		return m_prefetchThumb;
+	return DecodeThumb(GetSlideThumbPath(index));
 }
 
 void ComBridge::ClearThumbCache()
@@ -835,6 +871,9 @@ void ComBridge::Disconnect()
 	}
 	m_lastThumbSlide = -1;
 	m_prefetchSlide = 0;
+	m_nextThumb.reset();
+	m_prefetchThumb.reset();
+	m_prefetchThumbSlide = 0;
 
 	{
 		std::lock_guard<std::mutex> lk(m_mutex);
@@ -942,17 +981,21 @@ void ComBridge::PollState()
 
 			IDispatch *pNext = FindNextVisibleSlide(pSlides, cur, total, nextSlide);
 
-			if (cur != m_lastThumbSlide && (!pNext || ExportThumb(pNext, nextSlide))) {
-				m_lastThumbSlide = cur;
+			if (cur != m_lastThumbSlide) {
+				m_nextThumb = pNext && ExportThumb(pNext, nextSlide) ? LoadThumb(nextSlide) : nullptr;
+				if (!pNext || m_nextThumb) {
+					m_lastThumbSlide = cur;
 
-				int afterNext = 0;
-				if (pNext) {
-					IDispatch *pAfter = FindNextVisibleSlide(pSlides, nextSlide, total, afterNext);
-					if (pAfter)
-						pAfter->Release();
+					int afterNext = 0;
+					if (pNext) {
+						IDispatch *pAfter =
+							FindNextVisibleSlide(pSlides, nextSlide, total, afterNext);
+						if (pAfter)
+							pAfter->Release();
+					}
+					m_prefetchSlide = afterNext;
+					m_prefetchDue = GetTickCount64() + 500;
 				}
-				m_prefetchSlide = afterNext;
-				m_prefetchDue = GetTickCount64() + 500;
 			}
 
 			if (pNext)
@@ -982,6 +1025,7 @@ void ComBridge::PollState()
 	info.totalSlides = total;
 	info.nextSlide = nextSlide;
 	info.notes = notes;
+	info.nextThumb = m_nextThumb;
 	info.slideshowHwnd = showHwnd;
 	info.slideshowActive = true;
 
