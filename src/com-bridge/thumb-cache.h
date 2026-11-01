@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 struct IDispatch;
@@ -32,6 +33,8 @@ struct SlideThumb {
 	uint32_t height = 0;
 	std::vector<uint32_t> pixels;
 };
+
+std::shared_ptr<const SlideThumb> DecodeThumb(const std::wstring &path);
 
 // ------------------------------------------------------------------
 // ThumbCache -- slide PNGs exported to %TEMP% plus one decoded slot

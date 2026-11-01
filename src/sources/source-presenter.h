@@ -21,6 +21,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include "../wgc-capture/shared-capture.h"
 #include "../com-bridge/ppt-com-bridge.h"
+#include "presenter-layout.h"
 #include <memory>
 #include <string>
 
@@ -52,14 +53,7 @@ struct PresenterSource {
 	uint32_t outWidth = 1920;
 	uint32_t outHeight = 1080;
 
-	struct Layout {
-		gs_rect current = {};
-		gs_rect next = {};
-		gs_rect notes = {};
-		gs_rect controls = {};
-	} layout;
-
-	enum class LayoutPreset { Classic, TopBottom, NotesFocused, NextDominant, Custom };
+	PresenterLayout layout;
 
 	std::string themePreset = "yami";
 	LayoutPreset layoutPreset = LayoutPreset::Classic;
@@ -75,7 +69,7 @@ struct PresenterSource {
 	void ComputeLayout();
 	void RenderCurrentSlide();
 	void RenderNextSlide();
-	void RenderNotes(gs_rect area);
+	void RenderNotes(LayoutRect area);
 	void RenderControls();
 };
 

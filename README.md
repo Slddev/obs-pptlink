@@ -78,6 +78,16 @@ cmake --install build_x64 --config RelWithDebInfo
 
 Or open the folder in Visual Studio 2022 and select the preset from the toolbar.
 
+### Tests
+
+Unit tests cover the logic that runs without PowerPoint or OBS (presenter layout, thumbnail decoding).
+
+```powershell
+cmake --preset windows-x64 -DENABLE_TESTS=ON
+cmake --build --preset windows-x64
+ctest --test-dir build_x64 -C RelWithDebInfo --output-on-failure
+```
+
 ---
 
 ## Architecture

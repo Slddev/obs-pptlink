@@ -29,7 +29,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <windows.h>
 #include <oleauto.h>
 #include <cstring>
-#include <string>
 #include <gdiplus.h>
 
 namespace {
@@ -81,13 +80,17 @@ HRESULT DispCallExport(IDispatch *pSlide, const wchar_t *path, int width, int he
 	return hr;
 }
 
-std::shared_ptr<const ppt::SlideThumb> DecodeThumb(const std::wstring &path)
+} // namespace
+
+namespace ppt {
+
+std::shared_ptr<const SlideThumb> DecodeThumb(const std::wstring &path)
 {
 	Gdiplus::Bitmap bmp(path.c_str());
 	if (bmp.GetLastStatus() != Gdiplus::Ok)
 		return nullptr;
 
-	auto thumb = std::make_shared<ppt::SlideThumb>();
+	auto thumb = std::make_shared<SlideThumb>();
 	thumb->width = bmp.GetWidth();
 	thumb->height = bmp.GetHeight();
 	thumb->pixels.resize(thumb->width * thumb->height);
@@ -102,10 +105,6 @@ std::shared_ptr<const ppt::SlideThumb> DecodeThumb(const std::wstring &path)
 	bmp.UnlockBits(&data);
 	return thumb;
 }
-
-} // namespace
-
-namespace ppt {
 
 bool ThumbCache::IsCached(int index) const
 {

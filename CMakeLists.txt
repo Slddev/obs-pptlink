@@ -6,6 +6,7 @@ project(${_name} VERSION ${_version})
 
 option(ENABLE_FRONTEND_API "Use obs-frontend-api for UI functionality" ON)
 option(ENABLE_QT "Use Qt functionality" ON)
+option(ENABLE_TESTS "Build unit tests" OFF)
 
 include(compilerconfig)
 include(defaults)
@@ -74,6 +75,8 @@ target_sources(
     src/wgc-capture/shared-capture.h
     src/sources/source-slide.cpp
     src/sources/source-slide.h
+    src/sources/presenter-layout.cpp
+    src/sources/presenter-layout.h
     src/sources/source-presenter.cpp
     src/sources/source-presenter.h
     src/docks/dock-next-slide.cpp
@@ -90,3 +93,8 @@ target_include_directories(
 )
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
+
+if(ENABLE_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif()

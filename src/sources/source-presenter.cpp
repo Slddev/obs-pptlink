@@ -144,60 +144,7 @@ static void DrawTexture(gs_texture_t *tex, float x, float y, float w, float h)
 
 void PresenterSource::ComputeLayout()
 {
-	int W = (int)outWidth;
-	int H = (int)outHeight;
-
-	int barH = 60;
-	layout.controls = {0, H - barH, W, barH};
-
-	int availableH = H - barH;
-
-	if (layoutPreset == LayoutPreset::Classic) {
-		int notesH = (int)(availableH * 0.15f);
-		int slidesH = availableH - notesH;
-		int leftW = (int)(W * 0.65f);
-
-		layout.current = {0, 0, leftW, slidesH};
-		layout.next = {leftW, 0, W - leftW, slidesH};
-		layout.notes = {0, slidesH, W, notesH};
-
-	} else if (layoutPreset == LayoutPreset::TopBottom) {
-		int notesH = (int)(availableH * 0.30f);
-		int remainingH = availableH - notesH;
-		int currentH = (int)(remainingH * 0.60f);
-		int nextH = remainingH - currentH;
-
-		layout.current = {0, 0, W, currentH};
-		layout.next = {0, currentH, W, nextH};
-		layout.notes = {0, remainingH, W, notesH};
-
-	} else if (layoutPreset == LayoutPreset::NotesFocused) {
-		int notesH = (int)(availableH * 0.60f);
-		int slidesH = availableH - notesH;
-		int halfW = W / 2;
-
-		layout.current = {0, 0, halfW, slidesH};
-		layout.next = {halfW, 0, halfW, slidesH};
-		layout.notes = {0, slidesH, W, notesH};
-
-	} else if (layoutPreset == LayoutPreset::NextDominant) {
-		int notesH = (int)(availableH * 0.15f);
-		int slidesH = availableH - notesH;
-		int leftW = (int)(W * 0.35f);
-
-		layout.current = {0, 0, leftW, slidesH};
-		layout.next = {leftW, 0, W - leftW, slidesH};
-		layout.notes = {0, slidesH, W, notesH};
-
-	} else {
-		int notesH = (int)(availableH * (1.0f - splitY));
-		int slidesH = availableH - notesH;
-		int leftW = (int)(W * splitX);
-
-		layout.current = {0, 0, leftW, slidesH};
-		layout.next = {leftW, 0, W - leftW, slidesH};
-		layout.notes = {0, slidesH, W, notesH};
-	}
+	layout = ComputePresenterLayout(layoutPreset, outWidth, outHeight, splitX, splitY);
 }
 
 static const char *presenter_get_name(void *)
@@ -269,7 +216,6 @@ static void presenter_update(void *data, obs_data_t *settings)
 	ctx->splitX = (float)obs_data_get_double(settings, "split_x");
 	ctx->splitY = (float)obs_data_get_double(settings, "split_y");
 
-	using LayoutPreset = PresenterSource::LayoutPreset;
 	const char *layoutStr = obs_data_get_string(settings, "layout_preset");
 	std::string layout = layoutStr ? layoutStr : "classic";
 	if (layout == "classic")
@@ -449,7 +395,7 @@ void PresenterSource::RenderNextSlide()
 	}
 }
 
-void PresenterSource::RenderNotes(gs_rect area)
+void PresenterSource::RenderNotes(LayoutRect area)
 {
 	DrawFilledRect((float)area.x, (float)area.y, (float)area.cx, (float)area.cy, colPanel);
 	DrawFilledRect((float)area.x, (float)area.y, (float)area.cx, 2, colBorder);
