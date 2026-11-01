@@ -127,11 +127,8 @@ static void slide_source_tick(void *data, float seconds)
 		}
 	}
 
-	if (ctx->bridge && ctx->bridge->IsConnected()) {
-		ppt::SlidePaneRect pr = ctx->bridge->GetSlidePaneRect();
-		if (pr.valid && pr.w > 0 && pr.h > 0)
-			ctx->capture.SetSlideAspect(static_cast<float>(pr.w) / static_cast<float>(pr.h));
-	}
+	if (ctx->bridge && ctx->bridge->IsConnected())
+		ctx->capture.SetSlideAspect(ctx->bridge->GetSlideAspect());
 }
 
 static void slide_source_render(void *data, gs_effect_t *effect)

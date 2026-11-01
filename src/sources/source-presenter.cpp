@@ -408,6 +408,9 @@ static void presenter_tick(void *data, float /*seconds*/)
 		ctx->nextTexSlide = ctx->currentSlide;
 	}
 
+	if (ctx->bridge->IsConnected())
+		ctx->currentCapture.SetSlideAspect(ctx->bridge->GetSlideAspect());
+
 	HWND hwnd = info.slideshowHwnd;
 	if (!hwnd)
 		hwnd = wgc::FindSlideshowWindow();

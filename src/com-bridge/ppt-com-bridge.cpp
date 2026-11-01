@@ -520,6 +520,35 @@ void ComBridge::PollState()
 		}
 	}
 
+	double slideAspect = m_slideAspect.load();
+	{
+		IDispatch *pPres2 = DispGetObj(m_pShow, L"Presentation");
+		if (pPres2) {
+			IDispatch *pPS = DispGetObj(pPres2, L"PageSetup");
+			if (pPS) {
+				VARIANT vs;
+				VariantInit(&vs);
+				double sw = 0, sh = 0;
+				if (SUCCEEDED(DispGetProp(pPS, L"SlideWidth", &vs))) {
+					if (SUCCEEDED(VariantChangeType(&vs, &vs, 0, VT_R8)))
+						sw = vs.dblVal;
+					VariantClear(&vs);
+				}
+				if (SUCCEEDED(DispGetProp(pPS, L"SlideHeight", &vs))) {
+					if (SUCCEEDED(VariantChangeType(&vs, &vs, 0, VT_R8)))
+						sh = vs.dblVal;
+					VariantClear(&vs);
+				}
+				if (sw > 0 && sh > 0) {
+					slideAspect = sw / sh;
+					m_slideAspect.store(static_cast<float>(slideAspect));
+				}
+				pPS->Release();
+			}
+			pPres2->Release();
+		}
+	}
+
 	SlidePaneRect paneRect;
 	if (showHwnd) {
 		HWND mdiClient = FindWindowEx(showHwnd, nullptr, L"MDIClient", nullptr);
@@ -528,31 +557,6 @@ void ComBridge::PollState()
 			GetWindowRect(mdiClient, &mdiScr);
 			double mdiW = static_cast<double>(mdiScr.right - mdiScr.left);
 			double mdiH = static_cast<double>(mdiScr.bottom - mdiScr.top);
-
-			double slideAspect = 16.0 / 9.0;
-			IDispatch *pPres2 = DispGetObj(m_pShow, L"Presentation");
-			if (pPres2) {
-				IDispatch *pPS = DispGetObj(pPres2, L"PageSetup");
-				if (pPS) {
-					VARIANT vs;
-					VariantInit(&vs);
-					double sw = 0, sh = 0;
-					if (SUCCEEDED(DispGetProp(pPS, L"SlideWidth", &vs))) {
-						if (SUCCEEDED(VariantChangeType(&vs, &vs, 0, VT_R8)))
-							sw = vs.dblVal;
-						VariantClear(&vs);
-					}
-					if (SUCCEEDED(DispGetProp(pPS, L"SlideHeight", &vs))) {
-						if (SUCCEEDED(VariantChangeType(&vs, &vs, 0, VT_R8)))
-							sh = vs.dblVal;
-						VariantClear(&vs);
-					}
-					if (sw > 0 && sh > 0)
-						slideAspect = sw / sh;
-					pPS->Release();
-				}
-				pPres2->Release();
-			}
 
 			double fitW = mdiW, fitH = mdiW / slideAspect;
 			if (fitH > mdiH) {
@@ -569,9 +573,6 @@ void ComBridge::PollState()
 			paneRect.valid = (paneRect.w > 0 && paneRect.h > 0);
 		}
 	}
-
-	if (paneRect.valid)
-		m_slideAspect.store(static_cast<float>(paneRect.w) / static_cast<float>(paneRect.h));
 
 	bool changed = (cur != m_lastSlideIndex);
 	m_lastSlideIndex = cur;
