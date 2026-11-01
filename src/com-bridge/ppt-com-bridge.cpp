@@ -599,7 +599,8 @@ std::wstring ComBridge::GetNotesText(IDispatch *pSlide)
 	if (!pSlide)
 		return {};
 
-	IDispatch *pSlideShapes = nullptr;
+	constexpr int ppPlaceholderBody = 2;
+
 	IDispatch *pNP = DispGetObj(pSlide, L"NotesPage");
 	if (!pNP)
 		return {};
@@ -607,34 +608,52 @@ std::wstring ComBridge::GetNotesText(IDispatch *pSlide)
 	pNP->Release();
 	if (!pSh)
 		return {};
+	IDispatch *pPh = DispGetObj(pSh, L"Placeholders");
+	pSh->Release();
+	if (!pPh)
+		return {};
 
 	DISPID did;
 	BSTR bn = SysAllocString(L"Item");
-	HRESULT hr = pSh->GetIDsOfNames(IID_NULL, &bn, 1, LOCALE_USER_DEFAULT, &did);
+	HRESULT hr = pPh->GetIDsOfNames(IID_NULL, &bn, 1, LOCALE_USER_DEFAULT, &did);
 	SysFreeString(bn);
 	if (FAILED(hr)) {
-		pSh->Release();
+		pPh->Release();
 		return {};
 	}
 
-	VARIANT a, r;
-	VariantInit(&a);
-	VariantInit(&r);
-	a.vt = VT_I4;
-	a.lVal = 2;
-	DISPPARAMS d{&a, nullptr, 1, 0};
-	pSh->Invoke(did, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &d, &r, nullptr, nullptr);
-	pSh->Release();
+	IDispatch *pBody = nullptr;
+	int count = DispGetInt(pPh, L"Count");
+	for (int i = 1; i <= count && !pBody; ++i) {
+		VARIANT a, r;
+		VariantInit(&a);
+		VariantInit(&r);
+		a.vt = VT_I4;
+		a.lVal = i;
+		DISPPARAMS d{&a, nullptr, 1, 0};
+		pPh->Invoke(did, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &d, &r, nullptr, nullptr);
+		if (r.vt != VT_DISPATCH || !r.pdispVal) {
+			VariantClear(&r);
+			continue;
+		}
 
-	if (r.vt == VT_DISPATCH) {
-		pSlideShapes = r.pdispVal;
-	} else {
-		VariantClear(&r);
-		return {};
+		IDispatch *pShape = r.pdispVal;
+		IDispatch *pFmt = DispGetObj(pShape, L"PlaceholderFormat");
+		if (pFmt) {
+			if (DispGetInt(pFmt, L"Type", -1) == ppPlaceholderBody)
+				pBody = pShape;
+			pFmt->Release();
+		}
+		if (pBody != pShape)
+			pShape->Release();
 	}
+	pPh->Release();
 
-	IDispatch *pTF = DispGetObj(pSlideShapes, L"TextFrame");
-	pSlideShapes->Release();
+	if (!pBody)
+		return {};
+
+	IDispatch *pTF = DispGetObj(pBody, L"TextFrame");
+	pBody->Release();
 	if (!pTF)
 		return {};
 
