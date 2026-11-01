@@ -120,7 +120,6 @@ bool CaptureSession::StartCapture(HWND hwnd)
 	}
 
 	StopCapture();
-	m_freezing.store(false);
 	m_hwnd = hwnd;
 
 	m_mdiClient = nullptr;
@@ -158,7 +157,7 @@ bool CaptureSession::StartCapture(HWND hwnd)
 			}
 		}
 
-		m_pool = winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool::Create(
+		m_pool = winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool::CreateFreeThreaded(
 			m_wrtDevice, winrt::Windows::Graphics::DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized, 2,
 			size);
 
@@ -230,16 +229,11 @@ void CaptureSession::FreezeLastFrame()
 
 void CaptureSession::StopCapture()
 {
-	m_freezing.store(true);
-
-	if (m_running.load() && m_renderTex) {
-		obs_enter_graphics();
+	obs_enter_graphics();
+	if (m_running.load() && m_renderTex)
 		FreezeLastFrame();
-		obs_leave_graphics();
-	}
-
 	m_running.store(false);
-	m_freezing.store(false);
+	obs_leave_graphics();
 
 	if (m_pool && m_frameToken.value != 0) {
 		m_pool.FrameArrived(m_frameToken);
@@ -255,13 +249,17 @@ void CaptureSession::StopCapture()
 	}
 	m_item = nullptr;
 
-	if (m_obsTexture) {
-		obs_enter_graphics();
-		gs_texture_destroy(m_obsTexture);
-		obs_leave_graphics();
-		m_obsTexture = nullptr;
+	obs_enter_graphics();
+	{
+		std::lock_guard<std::mutex> lk(m_frameMutex);
+		if (m_obsTexture) {
+			gs_texture_destroy(m_obsTexture);
+			m_obsTexture = nullptr;
+		}
+		m_renderTex = nullptr;
 	}
-	m_renderTex = nullptr;
+	obs_leave_graphics();
+
 	m_hwnd = nullptr;
 	m_mdiClient = nullptr;
 }
@@ -326,9 +324,6 @@ void CaptureSession::OnFrameArrivedInternal(winrt::Windows::Graphics::Capture::D
 	if (!frame)
 		return;
 
-	if (m_freezing.load())
-		return;
-
 	if (m_mdiClient && !IsSlideshowTitle(m_hwnd))
 		return;
 
@@ -361,64 +356,78 @@ void CaptureSession::OnFrameArrivedInternal(winrt::Windows::Graphics::Capture::D
 	uint32_t w = hasCrop ? static_cast<uint32_t>(crop.right - crop.left) : fw;
 	uint32_t h = hasCrop ? static_cast<uint32_t>(crop.bottom - crop.top) : fh;
 
-	auto surface = frame.Surface();
-	auto access = surface.as<Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>();
-	winrt::com_ptr<ID3D11Texture2D> frameTex;
-	winrt::check_hresult(access->GetInterface(IID_PPV_ARGS(frameTex.put())));
+	try {
+		auto surface = frame.Surface();
+		auto access = surface.as<Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>();
+		winrt::com_ptr<ID3D11Texture2D> frameTex;
+		winrt::check_hresult(access->GetInterface(IID_PPV_ARGS(frameTex.put())));
 
-	bool sizeChanged = false;
-	{
-		std::lock_guard<std::mutex> lk(m_frameMutex);
-		sizeChanged = (w != m_lastWidth || h != m_lastHeight);
+		bool sizeChanged = false;
+		bool copied = false;
 
-		if (sizeChanged || !m_renderTex) {
-			D3D11_TEXTURE2D_DESC desc = {};
-			desc.Width = w;
-			desc.Height = h;
-			desc.MipLevels = 1;
-			desc.ArraySize = 1;
-			desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-			desc.SampleDesc.Count = 1;
-			desc.Usage = D3D11_USAGE_DEFAULT;
-			desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-			desc.MiscFlags = 0;
+		obs_enter_graphics();
 
-			m_renderTex = nullptr;
-			m_textureDirty.store(true);
+		if (m_running.load()) {
+			std::lock_guard<std::mutex> lk(m_frameMutex);
+			sizeChanged = (w != m_lastWidth || h != m_lastHeight);
 
-			HRESULT hr = m_obsDevice->CreateTexture2D(&desc, nullptr, m_renderTex.put());
-			if (FAILED(hr)) {
-				blog(LOG_ERROR, "[PPTLink] CreateTexture2D failed: 0x%08X", hr);
-				return;
+			if (sizeChanged || !m_renderTex) {
+				D3D11_TEXTURE2D_DESC desc = {};
+				desc.Width = w;
+				desc.Height = h;
+				desc.MipLevels = 1;
+				desc.ArraySize = 1;
+				desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+				desc.SampleDesc.Count = 1;
+				desc.Usage = D3D11_USAGE_DEFAULT;
+				desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+				desc.MiscFlags = 0;
+
+				m_renderTex = nullptr;
+				m_textureDirty.store(true);
+
+				HRESULT hr = m_obsDevice->CreateTexture2D(&desc, nullptr, m_renderTex.put());
+				if (FAILED(hr)) {
+					blog(LOG_ERROR, "[PPTLink] CreateTexture2D failed: 0x%08X", hr);
+				} else {
+					m_lastWidth = w;
+					m_lastHeight = h;
+				}
 			}
 
-			m_lastWidth = w;
-			m_lastHeight = h;
+			if (m_renderTex) {
+				D3D11_BOX box = {};
+				box.left = hasCrop ? static_cast<UINT>(crop.left) : 0;
+				box.top = hasCrop ? static_cast<UINT>(crop.top) : 0;
+				box.right = hasCrop ? static_cast<UINT>(crop.right) : fw;
+				box.bottom = hasCrop ? static_cast<UINT>(crop.bottom) : fh;
+				box.front = 0;
+				box.back = 1;
+				m_obsContext->CopySubresourceRegion(m_renderTex.get(), 0, 0, 0, 0, frameTex.get(), 0,
+								    &box);
+				copied = true;
+			}
 		}
-	}
 
-	{
-		D3D11_BOX box = {};
-		box.left = hasCrop ? static_cast<UINT>(crop.left) : 0;
-		box.top = hasCrop ? static_cast<UINT>(crop.top) : 0;
-		box.right = hasCrop ? static_cast<UINT>(crop.right) : fw;
-		box.bottom = hasCrop ? static_cast<UINT>(crop.bottom) : fh;
-		box.front = 0;
-		box.back = 1;
-		m_obsContext->CopySubresourceRegion(m_renderTex.get(), 0, 0, 0, 0, frameTex.get(), 0, &box);
-	}
+		obs_leave_graphics();
 
-	m_newFrame.store(true);
-	if (OnFrameArrived)
-		OnFrameArrived();
+		if (!copied)
+			return;
 
-	if (sizeChanged) {
-		winrt::Windows::Graphics::SizeInt32 newSize;
-		newSize.Width = static_cast<int32_t>(fw);
-		newSize.Height = static_cast<int32_t>(fh);
-		m_pool.Recreate(m_wrtDevice,
-				winrt::Windows::Graphics::DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized, 2,
-				newSize);
+		m_newFrame.store(true);
+		if (OnFrameArrived)
+			OnFrameArrived();
+
+		if (sizeChanged) {
+			winrt::Windows::Graphics::SizeInt32 newSize;
+			newSize.Width = static_cast<int32_t>(fw);
+			newSize.Height = static_cast<int32_t>(fh);
+			pool.Recreate(m_wrtDevice,
+				      winrt::Windows::Graphics::DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized, 2,
+				      newSize);
+		}
+	} catch (winrt::hresult_error const &e) {
+		blog(LOG_WARNING, "[PPTLink] OnFrameArrived failed: %ls", e.message().c_str());
 	}
 }
 

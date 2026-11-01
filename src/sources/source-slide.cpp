@@ -100,6 +100,11 @@ static void slide_source_tick(void *data, float seconds)
 		}
 	}
 
+	if (ctx->capture.IsRunning() && !ctx->slideshowActive.load()) {
+		ctx->lastHwnd = nullptr;
+		ctx->capture.StopCapture();
+	}
+
 	ctx->pollAccum += seconds;
 	if (ctx->pollAccum < 0.5f)
 		return;
@@ -129,11 +134,6 @@ static void slide_source_render(void *data, gs_effect_t *effect)
 	auto *ctx = static_cast<SlideSource *>(data);
 	if (!ctx)
 		return;
-
-	if (ctx->capture.IsRunning() && !ctx->slideshowActive.load()) {
-		ctx->lastHwnd = nullptr;
-		ctx->capture.StopCapture();
-	}
 
 	ctx->RenderFrame(effect);
 }

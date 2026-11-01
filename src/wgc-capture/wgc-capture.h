@@ -103,7 +103,6 @@ private:
 	float m_slideAspect = 16.0f / 9.0f;
 
 	std::atomic<bool> m_running{false};
-	std::atomic<bool> m_freezing{false};
 	std::atomic<bool> m_newFrame{false};
 	std::atomic<bool> m_textureDirty{false};
 	bool m_useFallbackCopy = false;
