@@ -170,17 +170,21 @@ void NextSlideDock::onPollTimer()
 		}
 
 		loadThumbnail(info.currentSlide > 0 ? info.nextSlide : 0);
+	} else if (m_missingThumb > 0) {
+		loadThumbnail(m_missingThumb);
 	}
 }
 
 void NextSlideDock::loadThumbnail(int nextSlide)
 {
 	if (nextSlide <= 0) {
+		m_missingThumb = 0;
 		m_preview->setSlidePixmap(QPixmap());
 		return;
 	}
 
 	QPixmap px(QString::fromStdWString(ppt::GetSlideThumbPath(nextSlide)));
+	m_missingThumb = px.isNull() ? nextSlide : 0;
 	m_preview->setSlidePixmap(px.isNull() ? QPixmap() : px);
 }
 
@@ -192,6 +196,7 @@ void NextSlideDock::applyConnectedState(bool connected)
 	if (!connected) {
 		m_counter->setText("—");
 		m_lastSlide = m_lastTotal = -1;
+		m_missingThumb = 0;
 	}
 }
 

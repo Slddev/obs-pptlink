@@ -38,6 +38,7 @@ struct PresenterSource {
 	struct NextThumb {
 		int slide = -1;
 		bool loaded = false;
+		bool retry = false;
 		uint32_t width = 0;
 		uint32_t height = 0;
 		std::vector<uint32_t> pixels;
@@ -45,6 +46,7 @@ struct PresenterSource {
 
 	gs_texture_t *nextTex = nullptr;
 	int nextTexSlide = -1;
+	uint64_t nextRetryAt = 0;
 	std::future<NextThumb> nextLoad;
 
 	// Private text handles for native OBS font processing

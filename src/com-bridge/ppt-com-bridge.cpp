@@ -574,11 +574,17 @@ void ComBridge::ThreadProc()
 	CoUninitialize();
 }
 
+bool ComBridge::IsThumbCached(int index) const
+{
+	return index < static_cast<int>(m_thumbCached.size()) && m_thumbCached[index] &&
+	       GetFileAttributesW(GetSlideThumbPath(index).c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
 bool ComBridge::ExportThumb(IDispatch *pSlide, int index)
 {
 	if (!pSlide || index < 1)
 		return false;
-	if (index < static_cast<int>(m_thumbCached.size()) && m_thumbCached[index])
+	if (IsThumbCached(index))
 		return true;
 
 	CreateDirectoryW(GetThumbDir().c_str(), nullptr);
@@ -600,7 +606,7 @@ void ComBridge::ExportPrefetch()
 	m_prefetchSlide = 0;
 	if (index < 1 || !m_pShow)
 		return;
-	if (index < static_cast<int>(m_thumbCached.size()) && m_thumbCached[index])
+	if (IsThumbCached(index))
 		return;
 
 	IDispatch *pPres = DispGetObj(m_pShow, L"Presentation");

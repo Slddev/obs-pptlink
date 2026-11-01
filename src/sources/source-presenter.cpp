@@ -430,18 +430,23 @@ static void presenter_tick(void *data, float /*seconds*/)
 				ctx->nextTex = gs_texture_create(thumb.width, thumb.height, GS_BGRA, 1, &pData, 0);
 			}
 			obs_leave_graphics();
+			if (thumb.retry)
+				ctx->nextRetryAt = os_gettime_ns() + 500000000ULL;
 		}
 	}
 
-	if (ctx->currentSlide > 0 && ctx->currentSlide != ctx->nextTexSlide && !ctx->nextLoad.valid()) {
+	bool retryDue = ctx->nextRetryAt != 0 && os_gettime_ns() >= ctx->nextRetryAt;
+	if (ctx->currentSlide > 0 && (ctx->currentSlide != ctx->nextTexSlide || retryDue) && !ctx->nextLoad.valid()) {
 		int slide = ctx->currentSlide;
 		std::wstring path = info.nextSlide > 0 ? ppt::GetSlideThumbPath(info.nextSlide) : std::wstring();
 		ctx->nextTexSlide = slide;
+		ctx->nextRetryAt = 0;
 		ctx->nextLoad = std::async(std::launch::async, [slide, path]() {
 			PresenterSource::NextThumb thumb;
 			thumb.slide = slide;
 			thumb.loaded = !path.empty() &&
 				       LoadTextureFromFile(path, thumb.pixels, thumb.width, thumb.height);
+			thumb.retry = !path.empty() && !thumb.loaded;
 			return thumb;
 		});
 	}
@@ -454,6 +459,7 @@ static void presenter_tick(void *data, float /*seconds*/)
 		}
 		obs_leave_graphics();
 		ctx->nextTexSlide = -1;
+		ctx->nextRetryAt = 0;
 	}
 }
 

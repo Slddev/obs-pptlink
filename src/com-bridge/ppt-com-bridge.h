@@ -111,6 +111,7 @@ private:
 	void RunCommands();
 	void WaitForWork(DWORD timeoutMs);
 	void PumpFor(DWORD durationMs);
+	bool IsThumbCached(int index) const;
 	bool ExportThumb(IDispatch *pSlide, int index);
 	void ExportPrefetch();
 	void ClearThumbCache();

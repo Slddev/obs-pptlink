@@ -72,6 +72,7 @@ private:
 	bool m_lastConnected = false;
 	int m_lastSlide = -1;
 	int m_lastTotal = -1;
+	int m_missingThumb = 0;
 };
 
 void RegisterDocks(ppt::ComBridge *bridge);
