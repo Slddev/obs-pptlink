@@ -50,16 +50,6 @@ static void *slide_source_create(obs_data_t *settings, obs_source_t *source)
 		return ctx->slideshowActive.load();
 	};
 
-	if (ctx->bridge) {
-		ctx->bridge->OnSlideChanged = [ctx](const ppt::SlideInfo &info) {
-			ctx->slideshowActive.store(info.slideshowActive);
-		};
-		ctx->bridge->OnConnectionChanged = [ctx](bool connected) {
-			if (!connected)
-				ctx->slideshowActive.store(false);
-		};
-	}
-
 	obs_leave_graphics();
 
 	obs_source_update(source, settings);
@@ -70,11 +60,6 @@ static void *slide_source_create(obs_data_t *settings, obs_source_t *source)
 static void slide_source_destroy(void *data)
 {
 	auto *ctx = static_cast<SlideSource *>(data);
-
-	if (ctx->bridge) {
-		ctx->bridge->OnSlideChanged = nullptr;
-		ctx->bridge->OnConnectionChanged = nullptr;
-	}
 
 	ctx->capture.Destroy();
 	delete ctx;
@@ -105,6 +90,15 @@ static void slide_source_tick(void *data, float seconds)
 	auto *ctx = static_cast<SlideSource *>(data);
 	if (!ctx)
 		return;
+
+	if (ctx->bridge) {
+		bool connected = ctx->bridge->IsConnected();
+		if (connected != ctx->bridgeConnected) {
+			ctx->bridgeConnected = connected;
+			if (!connected)
+				ctx->slideshowActive.store(false);
+		}
+	}
 
 	ctx->pollAccum += seconds;
 	if (ctx->pollAccum < 0.5f)

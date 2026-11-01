@@ -39,6 +39,7 @@ struct SlideSource {
 	bool showBorder = false;
 	HWND lastHwnd = nullptr;
 	float pollAccum = 0.5f;
+	bool bridgeConnected = false;
 
 	std::atomic<bool> slideshowActive{false};
 
