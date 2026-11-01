@@ -49,6 +49,7 @@ private:
 	QTextEdit *m_notes = nullptr;
 	QPushButton *m_btnPrev = nullptr;
 	QPushButton *m_btnNext = nullptr;
+	std::wstring m_lastNotes;
 };
 
 } // namespace dock

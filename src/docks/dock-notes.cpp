@@ -91,9 +91,16 @@ void NotesDock::updateFromInfo(const ppt::SlideInfo &info, bool connected)
 	m_notes->setEnabled(connected);
 
 	if (!connected) {
-		m_notes->clear();
+		if (!m_lastNotes.empty()) {
+			m_lastNotes.clear();
+			m_notes->clear();
+		}
 		return;
 	}
+
+	if (info.notes == m_lastNotes)
+		return;
+	m_lastNotes = info.notes;
 
 	QString text;
 	if (!info.notes.empty()) {
