@@ -21,7 +21,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include "../wgc-capture/shared-capture.h"
 #include "../com-bridge/ppt-com-bridge.h"
+#include <future>
 #include <string>
+#include <vector>
 
 namespace sources {
 
@@ -32,9 +34,18 @@ struct PresenterSource {
 	ppt::ComBridge *bridge = nullptr;
 	wgc::SharedCapture *capture = nullptr;
 
-	// Next-slide static thumbnail
+	// Next-slide static thumbnail, decoded off the graphics thread
+	struct NextThumb {
+		int slide = -1;
+		bool loaded = false;
+		uint32_t width = 0;
+		uint32_t height = 0;
+		std::vector<uint32_t> pixels;
+	};
+
 	gs_texture_t *nextTex = nullptr;
 	int nextTexSlide = -1;
+	std::future<NextThumb> nextLoad;
 
 	// Private text handles for native OBS font processing
 	obs_source_t *notes_source = nullptr;

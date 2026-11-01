@@ -22,6 +22,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <graphics/graphics.h>
 #include <graphics/vec4.h>
 #include <util/platform.h>
+#include <chrono>
 #include <cstring>
 #include <vector>
 #include <gdiplus.h>
@@ -416,24 +417,33 @@ static void presenter_tick(void *data, float /*seconds*/)
 		}
 	}
 
-	// Load next preview thumbnail dynamically when slide changes
-	if (ctx->currentSlide > 0 && ctx->currentSlide != ctx->nextTexSlide) {
-		std::vector<uint32_t> pixels;
-		uint32_t w = 0, h = 0;
-		bool loaded = info.nextSlide > 0 &&
-			      LoadTextureFromFile(ppt::GetSlideThumbPath(info.nextSlide), pixels, w, h);
+	if (ctx->nextLoad.valid() && ctx->nextLoad.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+		PresenterSource::NextThumb thumb = ctx->nextLoad.get();
+		if (thumb.slide == ctx->nextTexSlide) {
+			obs_enter_graphics();
+			if (ctx->nextTex) {
+				gs_texture_destroy(ctx->nextTex);
+				ctx->nextTex = nullptr;
+			}
+			if (thumb.loaded) {
+				const uint8_t *pData = reinterpret_cast<const uint8_t *>(thumb.pixels.data());
+				ctx->nextTex = gs_texture_create(thumb.width, thumb.height, GS_BGRA, 1, &pData, 0);
+			}
+			obs_leave_graphics();
+		}
+	}
 
-		obs_enter_graphics();
-		if (ctx->nextTex) {
-			gs_texture_destroy(ctx->nextTex);
-			ctx->nextTex = nullptr;
-		}
-		if (loaded) {
-			const uint8_t *pData = reinterpret_cast<const uint8_t *>(pixels.data());
-			ctx->nextTex = gs_texture_create(w, h, GS_BGRA, 1, &pData, 0);
-		}
-		obs_leave_graphics();
-		ctx->nextTexSlide = ctx->currentSlide;
+	if (ctx->currentSlide > 0 && ctx->currentSlide != ctx->nextTexSlide && !ctx->nextLoad.valid()) {
+		int slide = ctx->currentSlide;
+		std::wstring path = info.nextSlide > 0 ? ppt::GetSlideThumbPath(info.nextSlide) : std::wstring();
+		ctx->nextTexSlide = slide;
+		ctx->nextLoad = std::async(std::launch::async, [slide, path]() {
+			PresenterSource::NextThumb thumb;
+			thumb.slide = slide;
+			thumb.loaded = !path.empty() &&
+				       LoadTextureFromFile(path, thumb.pixels, thumb.width, thumb.height);
+			return thumb;
+		});
 	}
 
 	if (ctx->currentSlide == 0 && ctx->nextTexSlide != -1) {
