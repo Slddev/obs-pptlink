@@ -158,11 +158,7 @@ void SlideSource::TryStartCapture()
 
 void SlideSource::RenderFrame(gs_effect_t *effect)
 {
-	gs_texture_t *tex = nullptr;
-	capture.AcquireLatestFrame(tex);
-
-	if (tex)
-		texture = tex;
+	capture.AcquireLatestFrame(texture);
 
 	if (!texture)
 		return;

@@ -431,15 +431,15 @@ bool CaptureSession::AcquireLatestFrame(gs_texture_t *&texture)
 
 	std::lock_guard<std::mutex> lk(m_frameMutex);
 
+	if (!m_renderTex) {
+		texture = m_obsTexture;
+		return texture != nullptr;
+	}
+
 	if (m_textureDirty.exchange(false) && m_obsTexture) {
 		gs_texture_destroy(m_obsTexture);
 		m_obsTexture = nullptr;
 		m_useFallbackCopy = false;
-	}
-
-	if (!m_renderTex) {
-		texture = nullptr;
-		return false;
 	}
 
 	if (!m_obsTexture) {

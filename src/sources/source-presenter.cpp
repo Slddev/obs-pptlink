@@ -442,9 +442,7 @@ void PresenterSource::RenderCurrentSlide()
 	DrawFilledRect((float)r.x, (float)r.y, (float)r.cx, (float)r.cy, 0xFF000000);
 
 	gs_texture_t *tex = nullptr;
-	if (currentCapture.AcquireLatestFrame(tex)) {
-		currentTex = tex;
-	}
+	currentTex = currentCapture.AcquireLatestFrame(tex) ? tex : nullptr;
 
 	if (currentTex) {
 		DrawTexture(currentTex, (float)r.x, (float)r.y, (float)r.cx, (float)r.cy);
