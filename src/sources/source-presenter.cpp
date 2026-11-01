@@ -418,11 +418,10 @@ static void presenter_tick(void *data, float /*seconds*/)
 
 	// Load next preview thumbnail dynamically when slide changes
 	if (ctx->currentSlide > 0 && ctx->currentSlide != ctx->nextTexSlide) {
-		std::wstring path = ppt::GetNextSlideThumbPath();
-
 		std::vector<uint32_t> pixels;
 		uint32_t w = 0, h = 0;
-		bool loaded = LoadTextureFromFile(path, pixels, w, h);
+		bool loaded = info.nextSlide > 0 &&
+			      LoadTextureFromFile(ppt::GetSlideThumbPath(info.nextSlide), pixels, w, h);
 
 		obs_enter_graphics();
 		if (ctx->nextTex) {

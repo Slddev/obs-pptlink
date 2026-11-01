@@ -34,6 +34,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <thread>
 #include <mutex>
 #include <deque>
+#include <vector>
 
 // Forward-declare PowerPoint COM types rather than importing the full
 // typelib, so the header compiles without Office installed.
@@ -57,8 +58,10 @@ struct SlideInfo {
 	bool slideshowActive = false;
 };
 
-// Path of the next-slide thumbnail PNG exported on every slide change.
-std::wstring GetNextSlideThumbPath();
+// Path of the cached PNG thumbnail for a 1-based slide index.
+// Only valid while the bridge is connected and the slide was announced
+// through SlideInfo::nextSlide.
+std::wstring GetSlideThumbPath(int slide);
 
 // ------------------------------------------------------------------
 // ComBridge
@@ -108,6 +111,9 @@ private:
 	void RunCommands();
 	void WaitForWork(DWORD timeoutMs);
 	void PumpFor(DWORD durationMs);
+	bool ExportThumb(IDispatch *pSlide, int index);
+	void ExportPrefetch();
+	void ClearThumbCache();
 
 	// Command queue for cross-thread calls
 	enum class CmdType { None, Next, Prev, Goto, End };
@@ -133,7 +139,10 @@ private:
 	std::atomic<bool> m_connected{false};
 
 	ULONGLONG m_firstFailureTick = 0;
-	int m_lastExportedIndex = -1;
+	int m_lastThumbSlide = -1;
+	int m_prefetchSlide = 0;
+	ULONGLONG m_prefetchDue = 0;
+	std::vector<bool> m_thumbCached;
 	ULONGLONG m_lastPollTick = 0;
 
 	// Command queue

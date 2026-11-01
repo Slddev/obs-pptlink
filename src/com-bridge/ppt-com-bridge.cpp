@@ -214,6 +214,28 @@ IDispatch *FindNextVisibleSlide(IDispatch *pSlides, int fromIndex, int total, in
 	return nullptr;
 }
 
+IDispatch *DispGetItem(IDispatch *pCollection, int index)
+{
+	DISPID dispid;
+	BSTR bname = SysAllocString(L"Item");
+	HRESULT hr = pCollection->GetIDsOfNames(IID_NULL, &bname, 1, LOCALE_USER_DEFAULT, &dispid);
+	SysFreeString(bname);
+	if (FAILED(hr))
+		return nullptr;
+
+	VARIANT arg, res;
+	VariantInit(&arg);
+	VariantInit(&res);
+	arg.vt = VT_I4;
+	arg.lVal = index;
+	DISPPARAMS dp{&arg, nullptr, 1, 0};
+	pCollection->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &dp, &res, nullptr, nullptr);
+	if (res.vt == VT_DISPATCH)
+		return res.pdispVal;
+	VariantClear(&res);
+	return nullptr;
+}
+
 bool GetAppEventInfo(IDispatch *pApp, IID &eventsIid, DISPID &slideChangedId, DISPID &showEndedId)
 {
 	CLSID clsid;
@@ -405,11 +427,16 @@ public:
 	STDMETHODIMP_(DWORD) MessagePending(HTASK, DWORD, DWORD) override { return PENDINGMSG_WAITDEFPROCESS; }
 };
 
-std::wstring GetNextSlideThumbPath()
+static std::wstring GetThumbDir()
 {
 	wchar_t tempPath[MAX_PATH];
 	GetTempPathW(MAX_PATH, tempPath);
-	return std::wstring(tempPath) + L"obs_ppt_next_" + std::to_wstring(GetCurrentProcessId()) + L".png";
+	return std::wstring(tempPath) + L"obs-pptlink-" + std::to_wstring(GetCurrentProcessId());
+}
+
+std::wstring GetSlideThumbPath(int slide)
+{
+	return GetThumbDir() + L"\\slide_" + std::to_wstring(slide) + L".png";
 }
 
 ComBridge::ComBridge()
@@ -506,8 +533,14 @@ void ComBridge::ThreadProc()
 		}
 
 		DWORD pollInterval = m_pSink ? 1000 : 100;
+		DWORD timeout = pollInterval;
+		if (m_prefetchSlide) {
+			ULONGLONG now = GetTickCount64();
+			DWORD remaining = now >= m_prefetchDue ? 0 : static_cast<DWORD>(m_prefetchDue - now);
+			timeout = remaining < pollInterval ? remaining : pollInterval;
+		}
 		if (!m_pSink || !m_pSink->HasPending())
-			WaitForWork(pollInterval);
+			WaitForWork(timeout);
 		if (m_stopRequested.load())
 			break;
 
@@ -524,9 +557,14 @@ void ComBridge::ThreadProc()
 		if ((events & AppEventSink::SlideChanged) || now - m_lastPollTick >= pollInterval) {
 			m_lastPollTick = now;
 			PollState();
-			if (!m_connected.load())
+			if (!m_connected.load()) {
 				PumpFor(1000);
+				continue;
+			}
 		}
+
+		if (m_prefetchSlide && GetTickCount64() >= m_prefetchDue && !(m_pSink && m_pSink->HasPending()))
+			ExportPrefetch();
 	}
 
 	Disconnect();
@@ -534,6 +572,62 @@ void ComBridge::ThreadProc()
 	if (pPrevFilter)
 		pPrevFilter->Release();
 	CoUninitialize();
+}
+
+bool ComBridge::ExportThumb(IDispatch *pSlide, int index)
+{
+	if (!pSlide || index < 1)
+		return false;
+	if (index < static_cast<int>(m_thumbCached.size()) && m_thumbCached[index])
+		return true;
+
+	CreateDirectoryW(GetThumbDir().c_str(), nullptr);
+
+	constexpr int thumbWidth = 1920;
+	int thumbHeight = static_cast<int>(thumbWidth / m_slideAspect.load() + 0.5f);
+	if (FAILED(DispCallExport(pSlide, GetSlideThumbPath(index).c_str(), thumbWidth, thumbHeight)))
+		return false;
+
+	if (index >= static_cast<int>(m_thumbCached.size()))
+		m_thumbCached.resize(index + 1, false);
+	m_thumbCached[index] = true;
+	return true;
+}
+
+void ComBridge::ExportPrefetch()
+{
+	int index = m_prefetchSlide;
+	m_prefetchSlide = 0;
+	if (index < 1 || !m_pShow)
+		return;
+	if (index < static_cast<int>(m_thumbCached.size()) && m_thumbCached[index])
+		return;
+
+	IDispatch *pPres = DispGetObj(m_pShow, L"Presentation");
+	if (!pPres)
+		return;
+	IDispatch *pSlides = DispGetObj(pPres, L"Slides");
+	pPres->Release();
+	if (!pSlides)
+		return;
+
+	IDispatch *pSlide = DispGetItem(pSlides, index);
+	pSlides->Release();
+	if (!pSlide)
+		return;
+
+	ExportThumb(pSlide, index);
+	pSlide->Release();
+}
+
+void ComBridge::ClearThumbCache()
+{
+	for (size_t i = 1; i < m_thumbCached.size(); ++i) {
+		if (m_thumbCached[i])
+			DeleteFileW(GetSlideThumbPath(static_cast<int>(i)).c_str());
+	}
+	m_thumbCached.clear();
+	RemoveDirectoryW(GetThumbDir().c_str());
 }
 
 void ComBridge::RunCommands()
@@ -733,7 +827,8 @@ void ComBridge::Disconnect()
 		std::lock_guard<std::mutex> lk(m_cmdMutex);
 		m_pendingCmds.clear();
 	}
-	m_lastExportedIndex = -1;
+	m_lastThumbSlide = -1;
+	m_prefetchSlide = 0;
 
 	{
 		std::lock_guard<std::mutex> lk(m_mutex);
@@ -743,7 +838,7 @@ void ComBridge::Disconnect()
 	if (!wasConnected)
 		return;
 
-	DeleteFileW(GetNextSlideThumbPath().c_str());
+	ClearThumbCache();
 	obs_log(LOG_INFO, "Disconnected from PowerPoint");
 	if (OnConnectionChanged)
 		OnConnectionChanged(false);
@@ -841,14 +936,17 @@ void ComBridge::PollState()
 
 			IDispatch *pNext = FindNextVisibleSlide(pSlides, cur, total, nextSlide);
 
-			if (cur != m_lastExportedIndex) {
-				std::wstring outPath = GetNextSlideThumbPath();
-				DeleteFileW(outPath.c_str());
-				constexpr int thumbWidth = 1920;
-				int thumbHeight = static_cast<int>(thumbWidth / m_slideAspect.load() + 0.5f);
-				if (!pNext ||
-				    SUCCEEDED(DispCallExport(pNext, outPath.c_str(), thumbWidth, thumbHeight)))
-					m_lastExportedIndex = cur;
+			if (cur != m_lastThumbSlide && (!pNext || ExportThumb(pNext, nextSlide))) {
+				m_lastThumbSlide = cur;
+
+				int afterNext = 0;
+				if (pNext) {
+					IDispatch *pAfter = FindNextVisibleSlide(pSlides, nextSlide, total, afterNext);
+					if (pAfter)
+						pAfter->Release();
+				}
+				m_prefetchSlide = afterNext;
+				m_prefetchDue = GetTickCount64() + 500;
 			}
 
 			if (pNext)

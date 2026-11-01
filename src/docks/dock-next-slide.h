@@ -59,7 +59,7 @@ private slots:
 
 private:
 	void buildUi();
-	void loadThumbnail(int currentSlide);
+	void loadThumbnail(int nextSlide);
 	void applyConnectedState(bool connected);
 
 	ppt::ComBridge *m_bridge = nullptr;

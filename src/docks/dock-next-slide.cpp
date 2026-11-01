@@ -169,18 +169,18 @@ void NextSlideDock::onPollTimer()
 			m_counter->setText("—");
 		}
 
-		loadThumbnail(info.currentSlide);
+		loadThumbnail(info.currentSlide > 0 ? info.nextSlide : 0);
 	}
 }
 
-void NextSlideDock::loadThumbnail(int currentSlide)
+void NextSlideDock::loadThumbnail(int nextSlide)
 {
-	if (currentSlide <= 0) {
+	if (nextSlide <= 0) {
 		m_preview->setSlidePixmap(QPixmap());
 		return;
 	}
 
-	QPixmap px(QString::fromStdWString(ppt::GetNextSlideThumbPath()));
+	QPixmap px(QString::fromStdWString(ppt::GetSlideThumbPath(nextSlide)));
 	m_preview->setSlidePixmap(px.isNull() ? QPixmap() : px);
 }
 
