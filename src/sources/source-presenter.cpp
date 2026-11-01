@@ -388,16 +388,19 @@ static void presenter_tick(void *data, float /*seconds*/)
 
 		std::vector<uint32_t> pixels;
 		uint32_t w = 0, h = 0;
-		if (LoadTextureFromFile(path, pixels, w, h)) {
-			obs_enter_graphics();
-			if (ctx->nextTex) {
-				gs_texture_destroy(ctx->nextTex);
-			}
+		bool loaded = LoadTextureFromFile(path, pixels, w, h);
+
+		obs_enter_graphics();
+		if (ctx->nextTex) {
+			gs_texture_destroy(ctx->nextTex);
+			ctx->nextTex = nullptr;
+		}
+		if (loaded) {
 			const uint8_t *pData = reinterpret_cast<const uint8_t *>(pixels.data());
 			ctx->nextTex = gs_texture_create(w, h, GS_BGRA, 1, &pData, 0);
-			obs_leave_graphics();
-			ctx->nextTexSlide = ctx->currentSlide;
 		}
+		obs_leave_graphics();
+		ctx->nextTexSlide = ctx->currentSlide;
 	}
 
 	HWND hwnd = info.slideshowHwnd;

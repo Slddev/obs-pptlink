@@ -483,17 +483,20 @@ void ComBridge::PollState()
 			}
 
 			IDispatch *pNext = FindNextVisibleSlide(pSlides, cur, total);
-			if (pNext) {
+			if (pNext)
 				nextNotes = GetNotesText(pNext);
-				if (cur != m_lastExportedIndex) {
-					wchar_t tempPath[MAX_PATH];
-					GetTempPathW(MAX_PATH, tempPath);
-					std::wstring outPath = std::wstring(tempPath) + L"obs_ppt_next.png";
-					if (SUCCEEDED(DispCallExport(pNext, outPath.c_str(), 960, 540)))
-						m_lastExportedIndex = cur;
-				}
-				pNext->Release();
+
+			if (cur != m_lastExportedIndex) {
+				wchar_t tempPath[MAX_PATH];
+				GetTempPathW(MAX_PATH, tempPath);
+				std::wstring outPath = std::wstring(tempPath) + L"obs_ppt_next.png";
+				DeleteFileW(outPath.c_str());
+				if (!pNext || SUCCEEDED(DispCallExport(pNext, outPath.c_str(), 960, 540)))
+					m_lastExportedIndex = cur;
 			}
+
+			if (pNext)
+				pNext->Release();
 			pSlides->Release();
 		}
 		pPres->Release();
