@@ -29,30 +29,22 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #endif
 
 #include <windows.h>
+#include "thumb-cache.h"
 #include <string>
 #include <atomic>
 #include <thread>
 #include <mutex>
 #include <deque>
 #include <memory>
-#include <vector>
 
 // Forward-declare PowerPoint COM types rather than importing the full
 // typelib, so the header compiles without Office installed.
-// The .cpp uses #import or raw IDispatch.
 struct IDispatch;
 struct IConnectionPoint;
 
 namespace ppt {
 
 class AppEventSink;
-
-// Decoded slide thumbnail, 32-bit BGRA pixels
-struct SlideThumb {
-	uint32_t width = 0;
-	uint32_t height = 0;
-	std::vector<uint32_t> pixels;
-};
 
 // ------------------------------------------------------------------
 // SlideInfo -- snapshot of current PPT state
@@ -66,11 +58,6 @@ struct SlideInfo {
 	HWND slideshowHwnd = nullptr;
 	bool slideshowActive = false;
 };
-
-// Path of the cached PNG thumbnail for a 1-based slide index.
-// Only valid while the bridge is connected and the slide was announced
-// through SlideInfo::nextSlide.
-std::wstring GetSlideThumbPath(int slide);
 
 // ------------------------------------------------------------------
 // ComBridge
@@ -120,11 +107,7 @@ private:
 	void RunCommands();
 	void WaitForWork(DWORD timeoutMs);
 	void PumpFor(DWORD durationMs);
-	bool IsThumbCached(int index) const;
-	bool ExportThumb(IDispatch *pSlide, int index);
 	void ExportPrefetch();
-	std::shared_ptr<const SlideThumb> LoadThumb(int index);
-	void ClearThumbCache();
 
 	// Command queue for cross-thread calls
 	enum class CmdType { None, Next, Prev, Goto, End };
@@ -153,10 +136,8 @@ private:
 	int m_lastThumbSlide = -1;
 	int m_prefetchSlide = 0;
 	ULONGLONG m_prefetchDue = 0;
-	std::vector<bool> m_thumbCached;
+	ThumbCache m_thumbs;
 	std::shared_ptr<const SlideThumb> m_nextThumb;
-	std::shared_ptr<const SlideThumb> m_prefetchThumb;
-	int m_prefetchThumbSlide = 0;
 	ULONGLONG m_lastPollTick = 0;
 
 	// Command queue

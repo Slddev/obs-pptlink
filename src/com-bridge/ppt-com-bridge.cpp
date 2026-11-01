@@ -22,32 +22,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <oleauto.h>
 #include <ocidl.h>
-#include <cstring>
-#include <gdiplus.h>
 
 namespace {
-
-std::shared_ptr<const ppt::SlideThumb> DecodeThumb(const std::wstring &path)
-{
-	Gdiplus::Bitmap bmp(path.c_str());
-	if (bmp.GetLastStatus() != Gdiplus::Ok)
-		return nullptr;
-
-	auto thumb = std::make_shared<ppt::SlideThumb>();
-	thumb->width = bmp.GetWidth();
-	thumb->height = bmp.GetHeight();
-	thumb->pixels.resize(thumb->width * thumb->height);
-
-	Gdiplus::Rect rect(0, 0, thumb->width, thumb->height);
-	Gdiplus::BitmapData data;
-	if (bmp.LockBits(&rect, Gdiplus::ImageLockModeRead, PixelFormat32bppARGB, &data) != Gdiplus::Ok)
-		return nullptr;
-	for (uint32_t y = 0; y < thumb->height; ++y)
-		std::memcpy(&thumb->pixels[y * thumb->width], static_cast<uint8_t *>(data.Scan0) + y * data.Stride,
-			    thumb->width * 4);
-	bmp.UnlockBits(&data);
-	return thumb;
-}
 
 HRESULT DispGetProp(IDispatch *pDisp, const wchar_t *name, VARIANT *pVar)
 {
@@ -109,41 +85,6 @@ HRESULT DispCall1Int(IDispatch *pDisp, const wchar_t *name, int val)
 	dp.cArgs = 1;
 	dp.rgvarg = &arg;
 	return pDisp->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &dp, nullptr, nullptr, nullptr);
-}
-
-HRESULT DispCallExport(IDispatch *pSlide, const wchar_t *path, int width, int height)
-{
-	if (!pSlide)
-		return E_POINTER;
-	DISPID dispid;
-	BSTR bname = SysAllocString(L"Export");
-	HRESULT hr = pSlide->GetIDsOfNames(IID_NULL, &bname, 1, LOCALE_USER_DEFAULT, &dispid);
-	SysFreeString(bname);
-	if (FAILED(hr))
-		return hr;
-
-	VARIANT args[4];
-	for (int i = 0; i < 4; ++i)
-		VariantInit(&args[i]);
-
-	args[0].vt = VT_I4;
-	args[0].lVal = height;
-	args[1].vt = VT_I4;
-	args[1].lVal = width;
-	args[2].vt = VT_BSTR;
-	args[2].bstrVal = SysAllocString(L"PNG");
-	args[3].vt = VT_BSTR;
-	args[3].bstrVal = SysAllocString(path);
-
-	DISPPARAMS dp{};
-	dp.cArgs = 4;
-	dp.rgvarg = args;
-
-	hr = pSlide->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &dp, nullptr, nullptr, nullptr);
-
-	SysFreeString(args[2].bstrVal);
-	SysFreeString(args[3].bstrVal);
-	return hr;
 }
 
 IDispatch *DispGetObj(IDispatch *pDisp, const wchar_t *name)
@@ -451,18 +392,6 @@ public:
 	STDMETHODIMP_(DWORD) MessagePending(HTASK, DWORD, DWORD) override { return PENDINGMSG_WAITDEFPROCESS; }
 };
 
-static std::wstring GetThumbDir()
-{
-	wchar_t tempPath[MAX_PATH];
-	GetTempPathW(MAX_PATH, tempPath);
-	return std::wstring(tempPath) + L"obs-pptlink-" + std::to_wstring(GetCurrentProcessId());
-}
-
-std::wstring GetSlideThumbPath(int slide)
-{
-	return GetThumbDir() + L"\\slide_" + std::to_wstring(slide) + L".png";
-}
-
 ComBridge::ComBridge()
 {
 	m_wakeEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
@@ -598,40 +527,14 @@ void ComBridge::ThreadProc()
 	CoUninitialize();
 }
 
-bool ComBridge::IsThumbCached(int index) const
-{
-	return index < static_cast<int>(m_thumbCached.size()) && m_thumbCached[index] &&
-	       GetFileAttributesW(GetSlideThumbPath(index).c_str()) != INVALID_FILE_ATTRIBUTES;
-}
-
-bool ComBridge::ExportThumb(IDispatch *pSlide, int index)
-{
-	if (!pSlide || index < 1)
-		return false;
-	if (IsThumbCached(index))
-		return true;
-
-	CreateDirectoryW(GetThumbDir().c_str(), nullptr);
-
-	constexpr int thumbWidth = 1920;
-	int thumbHeight = static_cast<int>(thumbWidth / m_slideAspect.load() + 0.5f);
-	if (FAILED(DispCallExport(pSlide, GetSlideThumbPath(index).c_str(), thumbWidth, thumbHeight)))
-		return false;
-
-	if (index >= static_cast<int>(m_thumbCached.size()))
-		m_thumbCached.resize(index + 1, false);
-	m_thumbCached[index] = true;
-	return true;
-}
-
 void ComBridge::ExportPrefetch()
 {
 	int index = m_prefetchSlide;
 	m_prefetchSlide = 0;
-	if (index < 1 || !m_pShow || index == m_prefetchThumbSlide)
+	if (index < 1 || !m_pShow || m_thumbs.IsDecoded(index))
 		return;
 
-	if (!IsThumbCached(index)) {
+	if (!m_thumbs.IsCached(index)) {
 		IDispatch *pPres = DispGetObj(m_pShow, L"Presentation");
 		if (!pPres)
 			return;
@@ -645,31 +548,13 @@ void ComBridge::ExportPrefetch()
 		if (!pSlide)
 			return;
 
-		bool exported = ExportThumb(pSlide, index);
+		bool exported = m_thumbs.Export(pSlide, index, m_slideAspect.load());
 		pSlide->Release();
 		if (!exported)
 			return;
 	}
 
-	m_prefetchThumb = DecodeThumb(GetSlideThumbPath(index));
-	m_prefetchThumbSlide = m_prefetchThumb ? index : 0;
-}
-
-std::shared_ptr<const SlideThumb> ComBridge::LoadThumb(int index)
-{
-	if (index == m_prefetchThumbSlide)
-		return m_prefetchThumb;
-	return DecodeThumb(GetSlideThumbPath(index));
-}
-
-void ComBridge::ClearThumbCache()
-{
-	for (size_t i = 1; i < m_thumbCached.size(); ++i) {
-		if (m_thumbCached[i])
-			DeleteFileW(GetSlideThumbPath(static_cast<int>(i)).c_str());
-	}
-	m_thumbCached.clear();
-	RemoveDirectoryW(GetThumbDir().c_str());
+	m_thumbs.Prefetch(index);
 }
 
 void ComBridge::RunCommands()
@@ -872,8 +757,6 @@ void ComBridge::Disconnect()
 	m_lastThumbSlide = -1;
 	m_prefetchSlide = 0;
 	m_nextThumb.reset();
-	m_prefetchThumb.reset();
-	m_prefetchThumbSlide = 0;
 
 	{
 		std::lock_guard<std::mutex> lk(m_mutex);
@@ -883,7 +766,7 @@ void ComBridge::Disconnect()
 	if (!wasConnected)
 		return;
 
-	ClearThumbCache();
+	m_thumbs.Clear();
 	obs_log(LOG_INFO, "Disconnected from PowerPoint");
 	if (OnConnectionChanged)
 		OnConnectionChanged(false);
@@ -982,7 +865,9 @@ void ComBridge::PollState()
 			IDispatch *pNext = FindNextVisibleSlide(pSlides, cur, total, nextSlide);
 
 			if (cur != m_lastThumbSlide) {
-				m_nextThumb = pNext && ExportThumb(pNext, nextSlide) ? LoadThumb(nextSlide) : nullptr;
+				m_nextThumb = pNext && m_thumbs.Export(pNext, nextSlide, m_slideAspect.load())
+						      ? m_thumbs.Load(nextSlide)
+						      : nullptr;
 				if (!pNext || m_nextThumb) {
 					m_lastThumbSlide = cur;
 

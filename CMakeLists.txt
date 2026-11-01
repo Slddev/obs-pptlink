@@ -66,6 +66,8 @@ target_sources(
     src/plugin-main.cpp
     src/com-bridge/ppt-com-bridge.cpp
     src/com-bridge/ppt-com-bridge.h
+    src/com-bridge/thumb-cache.cpp
+    src/com-bridge/thumb-cache.h
     src/wgc-capture/wgc-capture.cpp
     src/wgc-capture/wgc-capture.h
     src/wgc-capture/shared-capture.cpp
