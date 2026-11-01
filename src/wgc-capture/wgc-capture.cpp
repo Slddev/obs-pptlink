@@ -27,39 +27,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace wgc {
 
-struct SlidePaneCtx {
-	HWND result = nullptr;
-	DWORD bestArea = 0;
-};
-
-static BOOL CALLBACK FindMdiClassEnum(HWND hwnd, LPARAM lParam)
-{
-	wchar_t cls[64] = {};
-	GetClassNameW(hwnd, cls, 64);
-	if (wcscmp(cls, L"mdiClass") != 0)
-		return TRUE;
-	if (!IsWindowVisible(hwnd))
-		return TRUE;
-
-	RECT r = {};
-	GetWindowRect(hwnd, &r);
-	DWORD area = (DWORD)((r.right - r.left) * (r.bottom - r.top));
-
-	auto *ctx = reinterpret_cast<SlidePaneCtx *>(lParam);
-	if (area > ctx->bestArea) {
-		ctx->bestArea = area;
-		ctx->result = hwnd;
-	}
-	return TRUE;
-}
-
-HWND FindSlidePaneChild(HWND frameHwnd)
-{
-	SlidePaneCtx ctx;
-	EnumChildWindows(frameHwnd, FindMdiClassEnum, reinterpret_cast<LPARAM>(&ctx));
-	return ctx.result;
-}
-
 static bool IsSlideshowTitle(HWND hwnd)
 {
 	wchar_t title[512] = {};
@@ -271,7 +238,10 @@ void CaptureSession::Destroy()
 	}
 	m_frozenD3DTex = nullptr;
 	m_wrtDevice = nullptr;
-	m_obsContext = nullptr;
+	if (m_obsContext) {
+		m_obsContext->Release();
+		m_obsContext = nullptr;
+	}
 	m_obsDevice = nullptr;
 }
 
@@ -405,7 +375,6 @@ void CaptureSession::OnFrameArrivedInternal(winrt::Windows::Graphics::Capture::D
 		if (!copied)
 			return;
 
-		m_newFrame.store(true);
 		if (OnFrameArrived)
 			OnFrameArrived();
 

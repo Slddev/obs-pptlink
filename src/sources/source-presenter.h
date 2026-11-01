@@ -49,7 +49,6 @@ struct PresenterSource {
 	uint32_t shownWrapWidth = 0;
 
 	std::wstring currentNotes;
-	std::wstring nextNotes;
 	int currentSlide = 0;
 	int totalSlides = 0;
 
@@ -75,12 +74,11 @@ struct PresenterSource {
 	uint32_t colPanel = 0xFF2D2D2D;  // Yami panel
 	uint32_t colBorder = 0xFF3D3D3D; // Yami border
 	uint32_t colText = 0xFFE0E0E0;   // Yami text
-	uint32_t colAccent = 0xFF009AC7; // Yami highlight blue
 
 	void ComputeLayout();
 	void RenderCurrentSlide();
 	void RenderNextSlide();
-	void RenderNotes(const std::wstring &text, gs_rect area);
+	void RenderNotes(gs_rect area);
 	void RenderControls();
 };
 

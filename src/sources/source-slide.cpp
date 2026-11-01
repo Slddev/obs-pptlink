@@ -30,12 +30,11 @@ static const char *slide_source_get_name(void *)
 	return obs_module_text("PPT.SlideSource.Name");
 }
 
-static void *slide_source_create(obs_data_t *settings, obs_source_t *source)
+static void *slide_source_create(obs_data_t * /*settings*/, obs_source_t *source)
 {
 	SlideSource *ctx = new SlideSource();
 	ctx->source = source;
 	ctx->bridge = g_bridge;
-	ctx->showBorder = obs_data_get_bool(settings, "show_border");
 
 	obs_enter_graphics();
 
@@ -53,8 +52,6 @@ static void *slide_source_create(obs_data_t *settings, obs_source_t *source)
 
 	obs_leave_graphics();
 
-	obs_source_update(source, settings);
-
 	return ctx;
 }
 
@@ -64,12 +61,6 @@ static void slide_source_destroy(void *data)
 
 	ctx->capture.Destroy();
 	delete ctx;
-}
-
-static void slide_source_update(void *data, obs_data_t *settings)
-{
-	auto *ctx = static_cast<SlideSource *>(data);
-	ctx->showBorder = obs_data_get_bool(settings, "show_border");
 }
 
 static uint32_t slide_source_get_width(void *data)
@@ -140,18 +131,6 @@ static void slide_source_render(void *data, gs_effect_t *effect)
 	ctx->RenderFrame(effect);
 }
 
-void SlideSource::TryStartCapture()
-{
-	HWND hwnd = lastHwnd;
-	if (!hwnd) {
-		hwnd = wgc::FindSlideshowWindow();
-		if (!hwnd)
-			return;
-		lastHwnd = hwnd;
-	}
-	capture.StartCapture(hwnd);
-}
-
 void SlideSource::RenderFrame(gs_effect_t *effect)
 {
 	capture.AcquireLatestFrame(texture);
@@ -185,20 +164,6 @@ void SlideSource::RenderFrame(gs_effect_t *effect)
 	}
 }
 
-static obs_properties_t *slide_source_get_properties(void *)
-{
-	obs_properties_t *props = obs_properties_create();
-
-	obs_properties_add_bool(props, "show_border", obs_module_text("PPT.SlideSource.ShowBorder"));
-
-	return props;
-}
-
-static void slide_source_get_defaults(obs_data_t *settings)
-{
-	obs_data_set_default_bool(settings, "show_border", false);
-}
-
 void RegisterSlideSource()
 {
 	obs_source_info info = {};
@@ -208,13 +173,10 @@ void RegisterSlideSource()
 	info.get_name = slide_source_get_name;
 	info.create = slide_source_create;
 	info.destroy = slide_source_destroy;
-	info.update = slide_source_update;
 	info.video_tick = slide_source_tick;
 	info.video_render = slide_source_render;
 	info.get_width = slide_source_get_width;
 	info.get_height = slide_source_get_height;
-	info.get_properties = slide_source_get_properties;
-	info.get_defaults = slide_source_get_defaults;
 
 	obs_register_source(&info);
 	obs_log(LOG_INFO, "Registered source: ppt_slide_source");

@@ -63,6 +63,22 @@ static uint32_t SwapRedBlue(uint32_t color)
 	return (color & 0xFF00FF00) | ((color & 0xFF) << 16) | ((color >> 16) & 0xFF);
 }
 
+static std::wstring ModuleTextW(const char *key)
+{
+	wchar_t *wide = nullptr;
+	os_utf8_to_wcs_ptr(obs_module_text(key), 0, &wide);
+	std::wstring text = wide ? wide : L"";
+	bfree(wide);
+	return text;
+}
+
+static void ReplaceArg(std::wstring &text, const wchar_t *arg, int value)
+{
+	size_t pos = text.find(arg);
+	if (pos != std::wstring::npos)
+		text.replace(pos, wcslen(arg), std::to_wstring(value));
+}
+
 static void UpdateTextSource(obs_source_t *source, const std::wstring &text, uint32_t color, uint32_t size, bool wrap,
 			     uint32_t wrap_width)
 {
@@ -303,7 +319,6 @@ static void presenter_update(void *data, obs_data_t *settings)
 	//          colPanel -> --grey6 (palette_dark  / dock/panel bg)
 	//          colBorder-> --grey5 (palette_mid   / separator / input border)
 	//          colText  -> --text  (palette_windowText)
-	//          colAccent-> --primary (palette_highlight)
 	if (ctx->themePreset == "yami") {
 		// Yami -- default OBS dark theme, navy-blue tinted grey ramp.
 		// --grey8 #1e2328, --grey6 #2c3440, --grey5 #333d4a, --primary #336699
@@ -311,7 +326,6 @@ static void presenter_update(void *data, obs_data_t *settings)
 		ctx->colPanel = 0xFF2C3440;
 		ctx->colBorder = 0xFF333D4A;
 		ctx->colText = 0xFFEEEEEE;
-		ctx->colAccent = 0xFF336699;
 	} else if (ctx->themePreset == "acri") {
 		// Acri -- "darker than Dark", deep near-black with slight blue tint.
 		// --grey8 #0d0f14, --grey6 #181d26, --grey5 #1e2530, --primary #2d6a9f
@@ -319,7 +333,6 @@ static void presenter_update(void *data, obs_data_t *settings)
 		ctx->colPanel = 0xFF181D26;
 		ctx->colBorder = 0xFF1E2530;
 		ctx->colText = 0xFFDDDDDD;
-		ctx->colAccent = 0xFF2D6A9F;
 	} else if (ctx->themePreset == "rachni") {
 		// Rachni -- teal + red highlights on very dark purple-tinted base.
 		// --grey8 #12101a, --grey6 #1e1a2a, --grey5 #252235, --primary teal #00b4c8
@@ -327,7 +340,6 @@ static void presenter_update(void *data, obs_data_t *settings)
 		ctx->colPanel = 0xFF1E1A2A;
 		ctx->colBorder = 0xFF252235;
 		ctx->colText = 0xFFDDDDDD;
-		ctx->colAccent = 0xFF00B4C8; // Rachni teal
 	} else if (ctx->themePreset == "grey") {
 		// Grey -- neutral greyscale, no blue tint. Same Yami proportions.
 		// --grey8 #131313, --grey6 #272727, --grey5 #323232, --primary #336699
@@ -335,7 +347,6 @@ static void presenter_update(void *data, obs_data_t *settings)
 		ctx->colPanel = 0xFF272727;
 		ctx->colBorder = 0xFF323232;
 		ctx->colText = 0xFFEEEEEE;
-		ctx->colAccent = 0xFF336699;
 	} else if (ctx->themePreset == "system_light") {
 		// Light -- inverted Yami palette for light desktop environments.
 		// Bg is near-white, panel slightly darker, accent same blue.
@@ -343,7 +354,6 @@ static void presenter_update(void *data, obs_data_t *settings)
 		ctx->colPanel = 0xFFDEDEDE;
 		ctx->colBorder = 0xFFB8B8B8;
 		ctx->colText = 0xFF1A1A1A;
-		ctx->colAccent = 0xFF336699;
 	} else if (ctx->themePreset == "dark_legacy") {
 		// Dark (Classic) -- pre-Yami OBS default, pure neutral dark, no tint.
 		// Straight-grey ramp matching the legacy Dark.qss palette.
@@ -351,13 +361,11 @@ static void presenter_update(void *data, obs_data_t *settings)
 		ctx->colPanel = 0xFF292929;
 		ctx->colBorder = 0xFF3D3D3D;
 		ctx->colText = 0xFFCCCCCC;
-		ctx->colAccent = 0xFF4C7894; // legacy muted blue accent
-	} else {                             // Custom -- manual colour pickers
+	} else { // Custom -- manual colour pickers
 		ctx->colBg = 0xFF000000 | SwapRedBlue((uint32_t)obs_data_get_int(settings, "col_bg"));
 		ctx->colPanel = 0xFF000000 | SwapRedBlue((uint32_t)obs_data_get_int(settings, "col_panel"));
 		ctx->colBorder = 0xFF000000 | SwapRedBlue((uint32_t)obs_data_get_int(settings, "col_border"));
 		ctx->colText = 0xFF000000 | SwapRedBlue((uint32_t)obs_data_get_int(settings, "col_text"));
-		ctx->colAccent = 0xFF000000 | SwapRedBlue((uint32_t)obs_data_get_int(settings, "col_accent"));
 	}
 }
 
@@ -382,14 +390,14 @@ static void presenter_tick(void *data, float /*seconds*/)
 	ctx->currentSlide = info.currentSlide;
 	ctx->totalSlides = info.totalSlides;
 	ctx->currentNotes = info.notes;
-	ctx->nextNotes = info.nextNotes;
 
 	bool colorChanged = ctx->colText != ctx->shownTextColor;
 	ctx->shownTextColor = ctx->colText;
 
 	if (ctx->notes_source) {
 		uint32_t wWidth = ctx->layout.notes.cx > 40 ? ctx->layout.notes.cx - 40 : 400;
-		std::wstring notes = ctx->currentNotes.empty() ? L"No speaker notes." : ctx->currentNotes;
+		std::wstring notes = ctx->currentNotes.empty() ? ModuleTextW("PPT.PresenterSource.NoNotes")
+							       : ctx->currentNotes;
 		if (colorChanged || wWidth != ctx->shownWrapWidth || notes != ctx->shownNotes) {
 			UpdateTextSource(ctx->notes_source, notes, ctx->colText, 24, true, wWidth);
 			ctx->shownNotes = notes;
@@ -397,19 +405,18 @@ static void presenter_tick(void *data, float /*seconds*/)
 		}
 	}
 	if (ctx->counter_source) {
-		wchar_t cBuf[64];
-		swprintf_s(cBuf, L"Slide %d / %d", ctx->currentSlide, ctx->totalSlides);
-		if (colorChanged || ctx->shownCounter != cBuf) {
-			UpdateTextSource(ctx->counter_source, cBuf, ctx->colText, 28, false, 0);
-			ctx->shownCounter = cBuf;
+		std::wstring counter = ModuleTextW("PPT.PresenterSource.SlideCounter");
+		ReplaceArg(counter, L"%1", ctx->currentSlide);
+		ReplaceArg(counter, L"%2", ctx->totalSlides);
+		if (colorChanged || ctx->shownCounter != counter) {
+			UpdateTextSource(ctx->counter_source, counter, ctx->colText, 28, false, 0);
+			ctx->shownCounter = counter;
 		}
 	}
 
 	// Load next preview thumbnail dynamically when slide changes
 	if (ctx->currentSlide > 0 && ctx->currentSlide != ctx->nextTexSlide) {
-		wchar_t tempPath[MAX_PATH];
-		GetTempPathW(MAX_PATH, tempPath);
-		std::wstring path = std::wstring(tempPath) + L"obs_ppt_next.png";
+		std::wstring path = ppt::GetNextSlideThumbPath();
 
 		std::vector<uint32_t> pixels;
 		uint32_t w = 0, h = 0;
@@ -462,7 +469,7 @@ static void presenter_render(void *data, gs_effect_t * /*effect*/)
 
 	ctx->RenderCurrentSlide();
 	ctx->RenderNextSlide();
-	ctx->RenderNotes(ctx->currentNotes, ctx->layout.notes);
+	ctx->RenderNotes(ctx->layout.notes);
 	ctx->RenderControls();
 }
 
@@ -499,7 +506,7 @@ void PresenterSource::RenderNextSlide()
 	}
 }
 
-void PresenterSource::RenderNotes(const std::wstring & /*text*/, gs_rect area)
+void PresenterSource::RenderNotes(gs_rect area)
 {
 	DrawFilledRect((float)area.x, (float)area.y, (float)area.cx, (float)area.cy, colPanel);
 	DrawFilledRect((float)area.x, (float)area.y, (float)area.cx, 2, colBorder);
@@ -536,7 +543,6 @@ static bool theme_preset_changed(obs_properties_t *props, obs_property_t * /*p*/
 	obs_property_set_visible(obs_properties_get(props, "col_panel"), is_custom);
 	obs_property_set_visible(obs_properties_get(props, "col_border"), is_custom);
 	obs_property_set_visible(obs_properties_get(props, "col_text"), is_custom);
-	obs_property_set_visible(obs_properties_get(props, "col_accent"), is_custom);
 	return true;
 }
 
@@ -592,7 +598,6 @@ static obs_properties_t *presenter_get_properties(void *)
 	obs_properties_add_color(props, "col_panel", obs_module_text("PPT.PresenterSource.ColPanel"));
 	obs_properties_add_color(props, "col_border", obs_module_text("PPT.PresenterSource.ColBorder"));
 	obs_properties_add_color(props, "col_text", obs_module_text("PPT.PresenterSource.ColText"));
-	obs_properties_add_color(props, "col_accent", obs_module_text("PPT.PresenterSource.ColAccent"));
 	return props;
 }
 
@@ -609,7 +614,6 @@ static void presenter_get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "col_panel", 0x2D2D2D);
 	obs_data_set_default_int(settings, "col_border", 0x3D3D3D);
 	obs_data_set_default_int(settings, "col_text", 0xE0E0E0);
-	obs_data_set_default_int(settings, "col_accent", 0xC79A00);
 }
 
 void RegisterPresenterSource()

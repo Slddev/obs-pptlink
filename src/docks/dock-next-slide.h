@@ -59,7 +59,7 @@ private slots:
 
 private:
 	void buildUi();
-	void loadThumbnail(int currentSlide, int totalSlides);
+	void loadThumbnail(int currentSlide);
 	void applyConnectedState(bool connected);
 
 	ppt::ComBridge *m_bridge = nullptr;
@@ -72,7 +72,6 @@ private:
 	bool m_lastConnected = false;
 	int m_lastSlide = -1;
 	int m_lastTotal = -1;
-	QString m_lastThumbPath;
 };
 
 void RegisterDocks(ppt::ComBridge *bridge);

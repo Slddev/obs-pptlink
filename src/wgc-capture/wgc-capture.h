@@ -103,7 +103,6 @@ private:
 	float m_slideAspect = 16.0f / 9.0f;
 
 	std::atomic<bool> m_running{false};
-	std::atomic<bool> m_newFrame{false};
 	std::atomic<bool> m_textureDirty{false};
 	bool m_useFallbackCopy = false;
 	uint32_t m_lastWidth = 0;
@@ -111,7 +110,6 @@ private:
 	std::mutex m_frameMutex;
 };
 
-HWND FindSlidePaneChild(HWND frameHwnd);
 HWND FindSlideshowWindow(HWND pptHwnd = nullptr);
 RECT GetMdiClientCropRect(HWND pptFrameHwnd, HWND mdiClient);
 bool IsWGCSupported();

@@ -22,6 +22,5 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace hotkeys {
 void Register(ppt::ComBridge *bridge);
-void Save();
 void Unregister();
 } // namespace hotkeys

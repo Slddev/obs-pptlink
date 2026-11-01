@@ -18,9 +18,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <obs-module.h>
 #include <plugin-support.h>
-#ifdef HAVE_OBS_FRONTEND_API
-#include <obs-frontend-api.h>
-#endif
 
 #include "com-bridge/ppt-com-bridge.h"
 #include "sources/source-slide.h"
@@ -82,18 +79,6 @@ MODULE_EXPORT bool obs_module_load()
 
 	// Register plugin-level hotkeys
 	hotkeys::Register(g_bridge);
-
-#ifdef HAVE_OBS_FRONTEND_API
-	// Save hotkey bindings whenever OBS saves its own config so they persist
-	// across restarts even if the user never closed OBS cleanly.
-	obs_frontend_add_event_callback(
-		[](obs_frontend_event event, void *) {
-			if (event == OBS_FRONTEND_EVENT_PROFILE_CHANGED ||
-			    event == OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN)
-				hotkeys::Save();
-		},
-		nullptr);
-#endif
 
 	Gdiplus::GdiplusStartupInput si;
 	Gdiplus::GdiplusStartup(&g_gdiplusToken, &si, nullptr);

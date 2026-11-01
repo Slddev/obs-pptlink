@@ -24,7 +24,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPainter>
 #include <QResizeEvent>
 #include <QFont>
-#include <windows.h>
 
 namespace dock {
 
@@ -63,7 +62,7 @@ void NextSlidePreviewLabel::paintEvent(QPaintEvent *e)
 		p.fillRect(rect(), QColor(0, 0, 0));
 		p.setPen(QColor(80, 80, 80));
 		p.setFont(QFont("Arial", 10));
-		p.drawText(rect(), Qt::AlignCenter, tr("No Preview"));
+		p.drawText(rect(), Qt::AlignCenter, obs_module_text("PPT.NextSlideDock.NoPreview"));
 		return;
 	}
 	QLabel::paintEvent(e);
@@ -156,33 +155,30 @@ void NextSlideDock::onPollTimer()
 		m_lastTotal = info.totalSlides;
 
 		if (info.currentSlide > 0) {
-			int next = info.currentSlide + 1;
-			if (next <= info.totalSlides)
-				m_counter->setText(QString("Next: Slide %1  /  %2").arg(next).arg(info.totalSlides));
+			if (info.nextSlide > 0)
+				m_counter->setText(QString(obs_module_text("PPT.NextSlideDock.NextSlide"))
+							   .arg(info.nextSlide)
+							   .arg(info.totalSlides));
 			else
-				m_counter->setText(QString("Last slide  (%1 / %1)").arg(info.totalSlides));
+				m_counter->setText(
+					QString(obs_module_text("PPT.NextSlideDock.LastSlide")).arg(info.totalSlides));
 		} else {
 			m_counter->setText("—");
 		}
 
-		loadThumbnail(info.currentSlide, info.totalSlides);
+		loadThumbnail(info.currentSlide);
 	}
 }
 
-void NextSlideDock::loadThumbnail(int currentSlide, int totalSlides)
+void NextSlideDock::loadThumbnail(int currentSlide)
 {
 	if (currentSlide <= 0) {
 		m_preview->setSlidePixmap(QPixmap());
 		return;
 	}
 
-	wchar_t tempW[MAX_PATH] = {};
-	GetTempPathW(MAX_PATH, tempW);
-	QString path = QString::fromWCharArray(tempW) + "obs_ppt_next.png";
-	m_lastThumbPath = path;
-	QPixmap px(path);
+	QPixmap px(QString::fromStdWString(ppt::GetNextSlideThumbPath()));
 	m_preview->setSlidePixmap(px.isNull() ? QPixmap() : px);
-	(void)totalSlides;
 }
 
 void NextSlideDock::applyConnectedState(bool connected)
@@ -193,7 +189,6 @@ void NextSlideDock::applyConnectedState(bool connected)
 	if (!connected) {
 		m_counter->setText("—");
 		m_lastSlide = m_lastTotal = -1;
-		m_lastThumbPath.clear();
 	}
 }
 

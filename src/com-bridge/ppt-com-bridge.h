@@ -48,23 +48,14 @@ namespace ppt {
 struct SlideInfo {
 	int currentSlide = 0; // 1-based, 0 = not in slideshow
 	int totalSlides = 0;
-	std::wstring notes;     // current slide speaker notes (plain text)
-	std::wstring nextNotes; // next slide notes (if available)
+	int nextSlide = 0;  // 1-based next visible slide, 0 = none
+	std::wstring notes; // current slide speaker notes (plain text)
 	HWND slideshowHwnd = nullptr;
 	bool slideshowActive = false;
-
-	std::string nextSlideThumbPath;
 };
 
-// Slide pane rectangle in screen pixels.
-// Valid only when IsConnected() and slideshowActive.
-// In windowed slideshow mode this is the actual rendered slide area
-// inside the PPTFrameClass window, excluding all presenter chrome.
-struct SlidePaneRect {
-	int x = 0, y = 0; // top-left in screen coords
-	int w = 0, h = 0; // width / height in pixels
-	bool valid = false;
-};
+// Path of the next-slide thumbnail PNG exported on every slide change.
+std::wstring GetNextSlideThumbPath();
 
 // ------------------------------------------------------------------
 // ComBridge
@@ -84,7 +75,6 @@ public:
 
 	// -- State access (thread-safe) --
 	SlideInfo GetSlideInfo() const;
-	SlidePaneRect GetSlidePaneRect() const;
 	bool IsConnected() const { return m_connected.load(); }
 	// Slide aspect ratio (width/height) read from PageSetup.
 	// Returns 16/9 until the bridge connects and reads a presentation.
@@ -97,8 +87,6 @@ public:
 	void EndShow();
 
 	// -- Callbacks (called from STA thread; be fast / non-blocking) --
-	// Fired when the current slide changes.
-	std::function<void(const SlideInfo &)> OnSlideChanged;
 	// Fired when connection to PPT is established or lost.
 	std::function<void(bool connected)> OnConnectionChanged;
 
@@ -132,7 +120,6 @@ private:
 	// State (protected by m_mutex)
 	mutable std::mutex m_mutex;
 	SlideInfo m_state;
-	SlidePaneRect m_slidePaneRect;
 	std::atomic<bool> m_connected{false};
 
 	int m_consecutiveFailures = 0;
@@ -146,7 +133,6 @@ private:
 	IDispatch *m_pApp = nullptr;  // PowerPoint.Application
 	IDispatch *m_pShow = nullptr; // SlideShowWindow
 	IDispatch *m_pView = nullptr; // SlideShowView
-	int m_lastSlideIndex = -1;
 };
 
 } // namespace ppt

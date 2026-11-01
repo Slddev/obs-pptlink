@@ -161,8 +161,9 @@ std::wstring DispGetStr(IDispatch *pDisp, const wchar_t *name)
 	return r;
 }
 
-IDispatch *FindNextVisibleSlide(IDispatch *pSlides, int fromIndex, int total)
+IDispatch *FindNextVisibleSlide(IDispatch *pSlides, int fromIndex, int total, int &outIndex)
 {
+	outIndex = 0;
 	if (!pSlides || fromIndex >= total)
 		return nullptr;
 
@@ -204,8 +205,10 @@ IDispatch *FindNextVisibleSlide(IDispatch *pSlides, int fromIndex, int total)
 			pTrans->Release();
 		}
 
-		if (!hidden)
+		if (!hidden) {
+			outIndex = idx;
 			return pSlide;
+		}
 
 		pSlide->Release();
 	}
@@ -215,6 +218,13 @@ IDispatch *FindNextVisibleSlide(IDispatch *pSlides, int fromIndex, int total)
 } // namespace
 
 namespace ppt {
+
+std::wstring GetNextSlideThumbPath()
+{
+	wchar_t tempPath[MAX_PATH];
+	GetTempPathW(MAX_PATH, tempPath);
+	return std::wstring(tempPath) + L"obs_ppt_next_" + std::to_wstring(GetCurrentProcessId()) + L".png";
+}
 
 ComBridge::ComBridge() = default;
 ComBridge::~ComBridge()
@@ -240,12 +250,6 @@ SlideInfo ComBridge::GetSlideInfo() const
 {
 	std::lock_guard<std::mutex> lk(m_mutex);
 	return m_state;
-}
-
-SlidePaneRect ComBridge::GetSlidePaneRect() const
-{
-	std::lock_guard<std::mutex> lk(m_mutex);
-	return m_slidePaneRect;
 }
 
 void ComBridge::PostCommand(Command cmd)
@@ -413,7 +417,6 @@ void ComBridge::Disconnect()
 		std::lock_guard<std::mutex> lk(m_cmdMutex);
 		m_pendingCmds.clear();
 	}
-	m_lastSlideIndex = -1;
 	m_lastExportedIndex = -1;
 
 	{
@@ -424,6 +427,7 @@ void ComBridge::Disconnect()
 	if (!wasConnected)
 		return;
 
+	DeleteFileW(GetNextSlideThumbPath().c_str());
 	obs_log(LOG_INFO, "Disconnected from PowerPoint");
 	if (OnConnectionChanged)
 		OnConnectionChanged(false);
@@ -461,7 +465,8 @@ void ComBridge::PollState()
 
 	int total = 0;
 	HWND showHwnd = nullptr;
-	std::wstring notes, nextNotes;
+	int nextSlide = 0;
+	std::wstring notes;
 
 	IDispatch *pPres = DispGetObj(m_pShow, L"Presentation");
 	if (pPres) {
@@ -494,14 +499,10 @@ void ComBridge::PollState()
 				pSlide->Release();
 			}
 
-			IDispatch *pNext = FindNextVisibleSlide(pSlides, cur, total);
-			if (pNext)
-				nextNotes = GetNotesText(pNext);
+			IDispatch *pNext = FindNextVisibleSlide(pSlides, cur, total, nextSlide);
 
 			if (cur != m_lastExportedIndex) {
-				wchar_t tempPath[MAX_PATH];
-				GetTempPathW(MAX_PATH, tempPath);
-				std::wstring outPath = std::wstring(tempPath) + L"obs_ppt_next.png";
+				std::wstring outPath = GetNextSlideThumbPath();
 				DeleteFileW(outPath.c_str());
 				if (!pNext || SUCCEEDED(DispCallExport(pNext, outPath.c_str(), 960, 540)))
 					m_lastExportedIndex = cur;
@@ -529,7 +530,6 @@ void ComBridge::PollState()
 		}
 	}
 
-	double slideAspect = m_slideAspect.load();
 	{
 		IDispatch *pPres2 = DispGetObj(m_pShow, L"Presentation");
 		if (pPres2) {
@@ -548,60 +548,26 @@ void ComBridge::PollState()
 						sh = vs.dblVal;
 					VariantClear(&vs);
 				}
-				if (sw > 0 && sh > 0) {
-					slideAspect = sw / sh;
-					m_slideAspect.store(static_cast<float>(slideAspect));
-				}
+				if (sw > 0 && sh > 0)
+					m_slideAspect.store(static_cast<float>(sw / sh));
 				pPS->Release();
 			}
 			pPres2->Release();
 		}
 	}
 
-	SlidePaneRect paneRect;
-	if (showHwnd) {
-		HWND mdiClient = FindWindowEx(showHwnd, nullptr, L"MDIClient", nullptr);
-		if (mdiClient && IsWindowVisible(mdiClient)) {
-			RECT mdiScr = {};
-			GetWindowRect(mdiClient, &mdiScr);
-			double mdiW = static_cast<double>(mdiScr.right - mdiScr.left);
-			double mdiH = static_cast<double>(mdiScr.bottom - mdiScr.top);
-
-			double fitW = mdiW, fitH = mdiW / slideAspect;
-			if (fitH > mdiH) {
-				fitH = mdiH;
-				fitW = fitH * slideAspect;
-			}
-			double offX = (mdiW - fitW) / 2.0;
-			double offY = (mdiH - fitH) / 2.0;
-
-			paneRect.x = static_cast<int>(mdiScr.left + offX + 0.5);
-			paneRect.y = static_cast<int>(mdiScr.top + offY + 0.5);
-			paneRect.w = static_cast<int>(fitW + 0.5);
-			paneRect.h = static_cast<int>(fitH + 0.5);
-			paneRect.valid = (paneRect.w > 0 && paneRect.h > 0);
-		}
-	}
-
-	bool changed = (cur != m_lastSlideIndex);
-	m_lastSlideIndex = cur;
-
 	SlideInfo info;
 	info.currentSlide = cur;
 	info.totalSlides = total;
+	info.nextSlide = nextSlide;
 	info.notes = notes;
-	info.nextNotes = nextNotes;
 	info.slideshowHwnd = showHwnd;
 	info.slideshowActive = true;
 
 	{
 		std::lock_guard<std::mutex> lk(m_mutex);
 		m_state = info;
-		m_slidePaneRect = paneRect;
 	}
-
-	if (changed && OnSlideChanged)
-		OnSlideChanged(info);
 }
 
 std::wstring ComBridge::GetNotesText(IDispatch *pSlide)

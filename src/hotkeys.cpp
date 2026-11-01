@@ -146,11 +146,6 @@ void Register(ppt::ComBridge *bridge)
 	obs_frontend_add_event_callback(OnFrontendEvent, nullptr);
 }
 
-void Save()
-{
-	SaveBindings();
-}
-
 void Unregister()
 {
 	obs_frontend_remove_event_callback(OnFrontendEvent, nullptr);
