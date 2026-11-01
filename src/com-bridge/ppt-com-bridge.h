@@ -39,8 +39,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // typelib, so the header compiles without Office installed.
 // The .cpp uses #import or raw IDispatch.
 struct IDispatch;
+struct IConnectionPoint;
 
 namespace ppt {
+
+class AppEventSink;
 
 // ------------------------------------------------------------------
 // SlideInfo -- snapshot of current PPT state
@@ -99,6 +102,11 @@ private:
 	void Disconnect();
 	void PollState();
 	std::wstring GetNotesText(IDispatch *pSlide);
+	bool AdviseEvents();
+	void UnadviseEvents();
+	void RunCommands();
+	void WaitForWork(DWORD timeoutMs);
+	void PumpFor(DWORD durationMs);
 
 	// Command queue for cross-thread calls
 	enum class CmdType { None, Next, Prev, Goto, End };
@@ -112,6 +120,7 @@ private:
 	// Thread
 	std::thread m_thread;
 	std::atomic<bool> m_stopRequested{false};
+	HANDLE m_wakeEvent = nullptr;
 
 	// Slide aspect ratio (w/h), updated from PageSetup on every PollState.
 	// Atomic float so GetSlideAspect() needs no lock.
@@ -122,8 +131,9 @@ private:
 	SlideInfo m_state;
 	std::atomic<bool> m_connected{false};
 
-	int m_consecutiveFailures = 0;
+	ULONGLONG m_firstFailureTick = 0;
 	int m_lastExportedIndex = -1;
+	ULONGLONG m_lastPollTick = 0;
 
 	// Command queue
 	std::mutex m_cmdMutex;
@@ -133,6 +143,11 @@ private:
 	IDispatch *m_pApp = nullptr;  // PowerPoint.Application
 	IDispatch *m_pShow = nullptr; // SlideShowWindow
 	IDispatch *m_pView = nullptr; // SlideShowView
+
+	// EApplication event subscription (only touched on STA thread)
+	AppEventSink *m_pSink = nullptr;
+	IConnectionPoint *m_pConnPoint = nullptr;
+	DWORD m_adviseCookie = 0;
 };
 
 } // namespace ppt

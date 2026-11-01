@@ -21,8 +21,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 
 #include <oleauto.h>
-#include <thread>
-#include <chrono>
+#include <ocidl.h>
 
 namespace {
 
@@ -215,9 +214,196 @@ IDispatch *FindNextVisibleSlide(IDispatch *pSlides, int fromIndex, int total, in
 	return nullptr;
 }
 
+bool GetAppEventInfo(IDispatch *pApp, IID &eventsIid, DISPID &slideChangedId, DISPID &showEndedId)
+{
+	CLSID clsid;
+	if (FAILED(CLSIDFromProgID(L"PowerPoint.Application", &clsid)))
+		return false;
+
+	ITypeInfo *pAppInfo = nullptr;
+	HRESULT hr = pApp->GetTypeInfo(0, LOCALE_USER_DEFAULT, &pAppInfo);
+	if (FAILED(hr)) {
+		obs_log(LOG_WARNING, "GetAppEventInfo: GetTypeInfo failed: 0x%08X", hr);
+		return false;
+	}
+
+	ITypeLib *pLib = nullptr;
+	UINT index = 0;
+	hr = pAppInfo->GetContainingTypeLib(&pLib, &index);
+	pAppInfo->Release();
+	if (FAILED(hr)) {
+		obs_log(LOG_WARNING, "GetAppEventInfo: GetContainingTypeLib failed: 0x%08X", hr);
+		return false;
+	}
+
+	ITypeInfo *pClassInfo = nullptr;
+	hr = pLib->GetTypeInfoOfGuid(clsid, &pClassInfo);
+	pLib->Release();
+	if (FAILED(hr)) {
+		obs_log(LOG_WARNING, "GetAppEventInfo: GetTypeInfoOfGuid failed: 0x%08X", hr);
+		return false;
+	}
+
+	ITypeInfo *pEventInfo = nullptr;
+	TYPEATTR *pClassAttr = nullptr;
+	if (SUCCEEDED(pClassInfo->GetTypeAttr(&pClassAttr))) {
+		for (UINT i = 0; i < pClassAttr->cImplTypes && !pEventInfo; ++i) {
+			INT flags = 0;
+			HREFTYPE ref = 0;
+			if (SUCCEEDED(pClassInfo->GetImplTypeFlags(i, &flags)) && (flags & IMPLTYPEFLAG_FDEFAULT) &&
+			    (flags & IMPLTYPEFLAG_FSOURCE) && SUCCEEDED(pClassInfo->GetRefTypeOfImplType(i, &ref)))
+				pClassInfo->GetRefTypeInfo(ref, &pEventInfo);
+		}
+		pClassInfo->ReleaseTypeAttr(pClassAttr);
+	}
+	pClassInfo->Release();
+	if (!pEventInfo) {
+		obs_log(LOG_WARNING, "GetAppEventInfo: no default source interface found");
+		return false;
+	}
+
+	bool haveSlideChanged = false;
+	bool haveShowEnded = false;
+	TYPEATTR *pEventAttr = nullptr;
+	if (SUCCEEDED(pEventInfo->GetTypeAttr(&pEventAttr))) {
+		eventsIid = pEventAttr->guid;
+
+		for (UINT i = 0; i < pEventAttr->cFuncs; ++i) {
+			FUNCDESC *pFunc = nullptr;
+			if (FAILED(pEventInfo->GetFuncDesc(i, &pFunc)))
+				continue;
+
+			BSTR name = nullptr;
+			if (SUCCEEDED(pEventInfo->GetDocumentation(pFunc->memid, &name, nullptr, nullptr, nullptr)) &&
+			    name) {
+				if (wcscmp(name, L"SlideShowNextSlide") == 0) {
+					slideChangedId = pFunc->memid;
+					haveSlideChanged = true;
+				} else if (wcscmp(name, L"SlideShowEnd") == 0) {
+					showEndedId = pFunc->memid;
+					haveShowEnded = true;
+				}
+				SysFreeString(name);
+			}
+			pEventInfo->ReleaseFuncDesc(pFunc);
+		}
+		pEventInfo->ReleaseTypeAttr(pEventAttr);
+	}
+	pEventInfo->Release();
+
+	if (!haveSlideChanged || !haveShowEnded)
+		obs_log(LOG_WARNING, "GetAppEventInfo: SlideShowNextSlide/SlideShowEnd not found in event interface");
+	return haveSlideChanged && haveShowEnded;
+}
+
 } // namespace
 
 namespace ppt {
+
+class AppEventSink : public IDispatch {
+public:
+	enum Event : unsigned { SlideChanged = 1, ShowEnded = 2 };
+
+	AppEventSink(const IID &eventsIid, DISPID slideChangedId, DISPID showEndedId)
+		: m_eventsIid(eventsIid),
+		  m_slideChangedId(slideChangedId),
+		  m_showEndedId(showEndedId)
+	{
+	}
+
+	bool HasPending() const { return m_pending != 0; }
+
+	unsigned TakePending()
+	{
+		unsigned pending = m_pending;
+		m_pending = 0;
+		return pending;
+	}
+
+	STDMETHODIMP QueryInterface(REFIID riid, void **ppv) override
+	{
+		if (!ppv)
+			return E_POINTER;
+		if (riid == IID_IUnknown || riid == IID_IDispatch || riid == m_eventsIid) {
+			*ppv = static_cast<IDispatch *>(this);
+			AddRef();
+			return S_OK;
+		}
+		*ppv = nullptr;
+		return E_NOINTERFACE;
+	}
+
+	STDMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&m_refs); }
+
+	STDMETHODIMP_(ULONG) Release() override
+	{
+		ULONG refs = InterlockedDecrement(&m_refs);
+		if (refs == 0)
+			delete this;
+		return refs;
+	}
+
+	STDMETHODIMP GetTypeInfoCount(UINT *pctinfo) override
+	{
+		if (pctinfo)
+			*pctinfo = 0;
+		return S_OK;
+	}
+
+	STDMETHODIMP GetTypeInfo(UINT, LCID, ITypeInfo **) override { return E_NOTIMPL; }
+
+	STDMETHODIMP GetIDsOfNames(REFIID, LPOLESTR *, UINT, LCID, DISPID *) override { return E_NOTIMPL; }
+
+	STDMETHODIMP Invoke(DISPID dispIdMember, REFIID, LCID, WORD, DISPPARAMS *, VARIANT *, EXCEPINFO *,
+			    UINT *) override
+	{
+		if (dispIdMember == m_slideChangedId)
+			m_pending |= SlideChanged;
+		else if (dispIdMember == m_showEndedId)
+			m_pending |= ShowEnded;
+		return S_OK;
+	}
+
+private:
+	IID m_eventsIid;
+	DISPID m_slideChangedId;
+	DISPID m_showEndedId;
+	unsigned m_pending = 0;
+	ULONG m_refs = 1;
+};
+
+class BusyRetryFilter : public IMessageFilter {
+public:
+	STDMETHODIMP QueryInterface(REFIID riid, void **ppv) override
+	{
+		if (!ppv)
+			return E_POINTER;
+		if (riid == IID_IUnknown || riid == IID_IMessageFilter) {
+			*ppv = static_cast<IMessageFilter *>(this);
+			return S_OK;
+		}
+		*ppv = nullptr;
+		return E_NOINTERFACE;
+	}
+
+	STDMETHODIMP_(ULONG) AddRef() override { return 1; }
+
+	STDMETHODIMP_(ULONG) Release() override { return 1; }
+
+	STDMETHODIMP_(DWORD) HandleInComingCall(DWORD, HTASK, DWORD, LPINTERFACEINFO) override
+	{
+		return SERVERCALL_ISHANDLED;
+	}
+
+	STDMETHODIMP_(DWORD) RetryRejectedCall(HTASK, DWORD dwTickCount, DWORD dwRejectType) override
+	{
+		if (dwRejectType == SERVERCALL_RETRYLATER && dwTickCount < 5000)
+			return 100;
+		return static_cast<DWORD>(-1);
+	}
+
+	STDMETHODIMP_(DWORD) MessagePending(HTASK, DWORD, DWORD) override { return PENDINGMSG_WAITDEFPROCESS; }
+};
 
 std::wstring GetNextSlideThumbPath()
 {
@@ -226,14 +412,22 @@ std::wstring GetNextSlideThumbPath()
 	return std::wstring(tempPath) + L"obs_ppt_next_" + std::to_wstring(GetCurrentProcessId()) + L".png";
 }
 
-ComBridge::ComBridge() = default;
+ComBridge::ComBridge()
+{
+	m_wakeEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+}
+
 ComBridge::~ComBridge()
 {
 	Stop();
+	if (m_wakeEvent)
+		CloseHandle(m_wakeEvent);
 }
 
 bool ComBridge::Start()
 {
+	if (!m_wakeEvent)
+		return false;
 	m_stopRequested.store(false);
 	m_thread = std::thread([this] { ThreadProc(); });
 	return true;
@@ -242,6 +436,8 @@ bool ComBridge::Start()
 void ComBridge::Stop()
 {
 	m_stopRequested.store(true);
+	if (m_wakeEvent)
+		SetEvent(m_wakeEvent);
 	if (m_thread.joinable())
 		m_thread.join();
 }
@@ -254,10 +450,13 @@ SlideInfo ComBridge::GetSlideInfo() const
 
 void ComBridge::PostCommand(Command cmd)
 {
-	std::lock_guard<std::mutex> lk(m_cmdMutex);
-	if (!m_connected.load())
-		return;
-	m_pendingCmds.push_back(cmd);
+	{
+		std::lock_guard<std::mutex> lk(m_cmdMutex);
+		if (!m_connected.load())
+			return;
+		m_pendingCmds.push_back(cmd);
+	}
+	SetEvent(m_wakeEvent);
 }
 
 void ComBridge::NextSlide()
@@ -287,48 +486,152 @@ void ComBridge::ThreadProc()
 		return;
 	}
 
+	BusyRetryFilter filter;
+	IMessageFilter *pPrevFilter = nullptr;
+	if (FAILED(CoRegisterMessageFilter(&filter, &pPrevFilter)))
+		obs_log(LOG_WARNING, "CoRegisterMessageFilter failed, busy PowerPoint calls will not be retried");
+
 	while (!m_stopRequested.load()) {
 		if (!m_connected.load()) {
 			if (!TryConnect()) {
-				std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+				PumpFor(1000);
 				continue;
 			}
 		}
 
-		std::deque<Command> cmds;
-		{
-			std::lock_guard<std::mutex> lk(m_cmdMutex);
-			cmds.swap(m_pendingCmds);
+		DWORD pollInterval = m_pSink ? 1000 : 100;
+		if (!m_pSink || !m_pSink->HasPending())
+			WaitForWork(pollInterval);
+		if (m_stopRequested.load())
+			break;
+
+		RunCommands();
+
+		unsigned events = m_pSink ? m_pSink->TakePending() : 0;
+		if (events & AppEventSink::ShowEnded) {
+			Disconnect();
+			PumpFor(1000);
+			continue;
 		}
 
-		for (const Command &cmd : cmds) {
-			if (!m_pView)
-				break;
-
-			switch (cmd.type) {
-			case CmdType::Next:
-				DispCall0(m_pView, L"Next");
-				break;
-			case CmdType::Prev:
-				DispCall0(m_pView, L"Previous");
-				break;
-			case CmdType::Goto:
-				DispCall1Int(m_pView, L"GotoSlide", cmd.gotoIndex);
-				break;
-			case CmdType::End:
-				DispCall0(m_pView, L"Exit");
-				break;
-			default:
-				break;
-			}
+		ULONGLONG now = GetTickCount64();
+		if ((events & AppEventSink::SlideChanged) || now - m_lastPollTick >= pollInterval) {
+			m_lastPollTick = now;
+			PollState();
+			if (!m_connected.load())
+				PumpFor(1000);
 		}
-
-		PollState();
-		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
 
 	Disconnect();
+	CoRegisterMessageFilter(pPrevFilter, nullptr);
+	if (pPrevFilter)
+		pPrevFilter->Release();
 	CoUninitialize();
+}
+
+void ComBridge::RunCommands()
+{
+	std::deque<Command> cmds;
+	{
+		std::lock_guard<std::mutex> lk(m_cmdMutex);
+		cmds.swap(m_pendingCmds);
+	}
+
+	for (const Command &cmd : cmds) {
+		if (!m_pView)
+			break;
+
+		switch (cmd.type) {
+		case CmdType::Next:
+			DispCall0(m_pView, L"Next");
+			break;
+		case CmdType::Prev:
+			DispCall0(m_pView, L"Previous");
+			break;
+		case CmdType::Goto:
+			DispCall1Int(m_pView, L"GotoSlide", cmd.gotoIndex);
+			break;
+		case CmdType::End:
+			DispCall0(m_pView, L"Exit");
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+void ComBridge::WaitForWork(DWORD timeoutMs)
+{
+	MsgWaitForMultipleObjectsEx(1, &m_wakeEvent, timeoutMs, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+
+	MSG msg;
+	while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+		TranslateMessage(&msg);
+		DispatchMessageW(&msg);
+	}
+}
+
+void ComBridge::PumpFor(DWORD durationMs)
+{
+	ULONGLONG deadline = GetTickCount64() + durationMs;
+	while (!m_stopRequested.load()) {
+		ULONGLONG now = GetTickCount64();
+		if (now >= deadline)
+			break;
+		WaitForWork(static_cast<DWORD>(deadline - now));
+	}
+}
+
+bool ComBridge::AdviseEvents()
+{
+	IID eventsIid;
+	DISPID slideChangedId = DISPID_UNKNOWN;
+	DISPID showEndedId = DISPID_UNKNOWN;
+	if (!GetAppEventInfo(m_pApp, eventsIid, slideChangedId, showEndedId)) {
+		obs_log(LOG_WARNING, "AdviseEvents: event type info lookup failed");
+		return false;
+	}
+
+	IConnectionPointContainer *pContainer = nullptr;
+	HRESULT hr = m_pApp->QueryInterface(IID_IConnectionPointContainer, reinterpret_cast<void **>(&pContainer));
+	if (FAILED(hr)) {
+		obs_log(LOG_WARNING, "AdviseEvents: IConnectionPointContainer failed: 0x%08X", hr);
+		return false;
+	}
+
+	hr = pContainer->FindConnectionPoint(eventsIid, &m_pConnPoint);
+	pContainer->Release();
+	if (FAILED(hr)) {
+		obs_log(LOG_WARNING, "AdviseEvents: FindConnectionPoint failed: 0x%08X", hr);
+		m_pConnPoint = nullptr;
+		return false;
+	}
+
+	m_pSink = new AppEventSink(eventsIid, slideChangedId, showEndedId);
+	hr = m_pConnPoint->Advise(m_pSink, &m_adviseCookie);
+	if (FAILED(hr)) {
+		obs_log(LOG_WARNING, "AdviseEvents: Advise failed: 0x%08X", hr);
+		UnadviseEvents();
+		return false;
+	}
+	return true;
+}
+
+void ComBridge::UnadviseEvents()
+{
+	if (m_pConnPoint) {
+		if (m_adviseCookie)
+			m_pConnPoint->Unadvise(m_adviseCookie);
+		m_pConnPoint->Release();
+		m_pConnPoint = nullptr;
+	}
+	m_adviseCookie = 0;
+
+	if (m_pSink) {
+		m_pSink->Release();
+		m_pSink = nullptr;
+	}
 }
 
 bool ComBridge::TryConnect()
@@ -391,7 +694,12 @@ bool ComBridge::TryConnect()
 	}
 
 	m_connected.store(true);
+	m_firstFailureTick = 0;
+	m_lastPollTick = 0;
 	obs_log(LOG_INFO, "Connected to PowerPoint slideshow");
+
+	if (!AdviseEvents())
+		obs_log(LOG_WARNING, "PowerPoint events unavailable, falling back to polling");
 
 	if (OnConnectionChanged)
 		OnConnectionChanged(true);
@@ -400,6 +708,8 @@ bool ComBridge::TryConnect()
 
 void ComBridge::Disconnect()
 {
+	UnadviseEvents();
+
 	if (m_pView) {
 		m_pView->Release();
 		m_pView = nullptr;
@@ -452,13 +762,17 @@ void ComBridge::PollState()
 	}
 
 	if (cur < 0) {
-		if (++m_consecutiveFailures >= 15) {
-			m_consecutiveFailures = 0;
+		ULONGLONG now = GetTickCount64();
+		if (!m_firstFailureTick)
+			m_firstFailureTick = now;
+		if (now - m_firstFailureTick >= 2000) {
+			obs_log(LOG_INFO, "PollState: CurrentShowPosition failing since %llu ms (0x%08X)",
+				now - m_firstFailureTick, hr);
 			Disconnect();
 		}
 		return;
 	}
-	m_consecutiveFailures = 0;
+	m_firstFailureTick = 0;
 
 	if (cur == 0)
 		return;
