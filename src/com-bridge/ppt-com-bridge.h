@@ -33,7 +33,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <atomic>
 #include <thread>
 #include <mutex>
-#include <optional>
+#include <deque>
 
 // Forward-declare PowerPoint COM types rather than importing the full
 // typelib, so the header compiles without Office installed.
@@ -140,7 +140,7 @@ private:
 
 	// Command queue
 	std::mutex m_cmdMutex;
-	std::optional<Command> m_pendingCmd;
+	std::deque<Command> m_pendingCmds;
 
 	// COM objects (only touched on STA thread)
 	IDispatch *m_pApp = nullptr;  // PowerPoint.Application

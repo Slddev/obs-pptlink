@@ -251,7 +251,9 @@ SlidePaneRect ComBridge::GetSlidePaneRect() const
 void ComBridge::PostCommand(Command cmd)
 {
 	std::lock_guard<std::mutex> lk(m_cmdMutex);
-	m_pendingCmd = cmd;
+	if (!m_connected.load())
+		return;
+	m_pendingCmds.push_back(cmd);
 }
 
 void ComBridge::NextSlide()
@@ -268,6 +270,8 @@ void ComBridge::EndShow()
 }
 void ComBridge::GotoSlide(int i)
 {
+	if (i < 1)
+		return;
 	PostCommand({CmdType::Goto, i});
 }
 
@@ -287,30 +291,31 @@ void ComBridge::ThreadProc()
 			}
 		}
 
+		std::deque<Command> cmds;
 		{
 			std::lock_guard<std::mutex> lk(m_cmdMutex);
-			if (m_pendingCmd.has_value()) {
-				auto cmd = *m_pendingCmd;
-				m_pendingCmd.reset();
+			cmds.swap(m_pendingCmds);
+		}
 
-				if (m_pView) {
-					switch (cmd.type) {
-					case CmdType::Next:
-						DispCall0(m_pView, L"Next");
-						break;
-					case CmdType::Prev:
-						DispCall0(m_pView, L"Previous");
-						break;
-					case CmdType::Goto:
-						DispCall1Int(m_pView, L"GotoSlide", cmd.gotoIndex);
-						break;
-					case CmdType::End:
-						DispCall0(m_pView, L"Exit");
-						break;
-					default:
-						break;
-					}
-				}
+		for (const Command &cmd : cmds) {
+			if (!m_pView)
+				break;
+
+			switch (cmd.type) {
+			case CmdType::Next:
+				DispCall0(m_pView, L"Next");
+				break;
+			case CmdType::Prev:
+				DispCall0(m_pView, L"Previous");
+				break;
+			case CmdType::Goto:
+				DispCall1Int(m_pView, L"GotoSlide", cmd.gotoIndex);
+				break;
+			case CmdType::End:
+				DispCall0(m_pView, L"Exit");
+				break;
+			default:
+				break;
 			}
 		}
 
@@ -404,6 +409,10 @@ void ComBridge::Disconnect()
 		m_pApp = nullptr;
 	}
 	bool wasConnected = m_connected.exchange(false);
+	{
+		std::lock_guard<std::mutex> lk(m_cmdMutex);
+		m_pendingCmds.clear();
+	}
 	m_lastSlideIndex = -1;
 	m_lastExportedIndex = -1;
 
