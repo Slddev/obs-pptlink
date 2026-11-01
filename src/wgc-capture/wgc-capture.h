@@ -22,6 +22,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <mutex>
 #include <atomic>
 #include <cstdint>
+#include <string>
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -100,6 +101,7 @@ private:
 
 	HWND m_hwnd = nullptr;
 	HWND m_mdiClient = nullptr;
+	std::wstring m_slideshowTitle;
 	float m_slideAspect = 16.0f / 9.0f;
 
 	std::atomic<bool> m_running{false};

@@ -34,6 +34,13 @@ static bool IsSlideshowTitle(HWND hwnd)
 	return wcsstr(title, L"PowerPoint Slide Show") != nullptr;
 }
 
+static std::wstring GetTitle(HWND hwnd)
+{
+	wchar_t title[512] = {};
+	GetWindowTextW(hwnd, title, 512);
+	return title;
+}
+
 static winrt::Windows::Graphics::DirectX::Direct3D11::IDirect3DDevice DeviceToWinRT(ID3D11Device *device)
 {
 	winrt::com_ptr<IDXGIDevice> dxgi;
@@ -92,6 +99,10 @@ bool CaptureSession::StartCapture(HWND hwnd)
 			if (mdi && IsWindowVisible(mdi))
 				m_mdiClient = mdi;
 		}
+	}
+	{
+		std::lock_guard<std::mutex> lk(m_frameMutex);
+		m_slideshowTitle = m_mdiClient ? GetTitle(hwnd) : std::wstring();
 	}
 
 	try {
@@ -287,6 +298,16 @@ void CaptureSession::OnFrameArrivedInternal(winrt::Windows::Graphics::Capture::D
 	auto frame = pool.TryGetNextFrame();
 	if (!frame)
 		return;
+
+	if (m_mdiClient) {
+		std::wstring expected;
+		{
+			std::lock_guard<std::mutex> lk(m_frameMutex);
+			expected = m_slideshowTitle;
+		}
+		if (GetTitle(m_hwnd) != expected)
+			return;
+	}
 
 	if (ShouldAcceptFrame && !ShouldAcceptFrame())
 		return;
