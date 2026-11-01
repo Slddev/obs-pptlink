@@ -58,6 +58,11 @@ bool LoadTextureFromFile(const std::wstring &path, std::vector<uint32_t> &pixels
 
 namespace sources {
 
+static uint32_t SwapRedBlue(uint32_t color)
+{
+	return (color & 0xFF00FF00) | ((color & 0xFF) << 16) | ((color >> 16) & 0xFF);
+}
+
 static void UpdateTextSource(obs_source_t *source, const std::wstring &text, uint32_t color, uint32_t size, bool wrap,
 			     uint32_t wrap_width)
 {
@@ -77,7 +82,7 @@ static void UpdateTextSource(obs_source_t *source, const std::wstring &text, uin
 	obs_data_set_obj(settings, "font", font_obj);
 	obs_data_release(font_obj);
 
-	obs_data_set_int(settings, "color", color);
+	obs_data_set_int(settings, "color", SwapRedBlue(color));
 	if (wrap && wrap_width > 0) {
 		obs_data_set_bool(settings, "wrap", true);
 		obs_data_set_int(settings, "extents_cx", wrap_width);
@@ -337,11 +342,11 @@ static void presenter_update(void *data, obs_data_t *settings)
 		ctx->colText = 0xFFCCCCCC;
 		ctx->colAccent = 0xFF4C7894; // legacy muted blue accent
 	} else {                             // Custom -- manual colour pickers
-		ctx->colBg = 0xFF000000 | (uint32_t)obs_data_get_int(settings, "col_bg");
-		ctx->colPanel = 0xFF000000 | (uint32_t)obs_data_get_int(settings, "col_panel");
-		ctx->colBorder = 0xFF000000 | (uint32_t)obs_data_get_int(settings, "col_border");
-		ctx->colText = 0xFF000000 | (uint32_t)obs_data_get_int(settings, "col_text");
-		ctx->colAccent = 0xFF000000 | (uint32_t)obs_data_get_int(settings, "col_accent");
+		ctx->colBg = 0xFF000000 | SwapRedBlue((uint32_t)obs_data_get_int(settings, "col_bg"));
+		ctx->colPanel = 0xFF000000 | SwapRedBlue((uint32_t)obs_data_get_int(settings, "col_panel"));
+		ctx->colBorder = 0xFF000000 | SwapRedBlue((uint32_t)obs_data_get_int(settings, "col_border"));
+		ctx->colText = 0xFF000000 | SwapRedBlue((uint32_t)obs_data_get_int(settings, "col_text"));
+		ctx->colAccent = 0xFF000000 | SwapRedBlue((uint32_t)obs_data_get_int(settings, "col_accent"));
 	}
 }
 
@@ -581,7 +586,7 @@ static void presenter_get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "col_panel", 0x2D2D2D);
 	obs_data_set_default_int(settings, "col_border", 0x3D3D3D);
 	obs_data_set_default_int(settings, "col_text", 0xE0E0E0);
-	obs_data_set_default_int(settings, "col_accent", 0x009AC7);
+	obs_data_set_default_int(settings, "col_accent", 0xC79A00);
 }
 
 void RegisterPresenterSource()
