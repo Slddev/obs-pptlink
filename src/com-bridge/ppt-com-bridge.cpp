@@ -403,7 +403,7 @@ void ComBridge::Disconnect()
 		m_pApp->Release();
 		m_pApp = nullptr;
 	}
-	m_connected.store(false);
+	bool wasConnected = m_connected.exchange(false);
 	m_lastSlideIndex = -1;
 	m_lastExportedIndex = -1;
 
@@ -411,6 +411,9 @@ void ComBridge::Disconnect()
 		std::lock_guard<std::mutex> lk(m_mutex);
 		m_state = {};
 	}
+
+	if (!wasConnected)
+		return;
 
 	obs_log(LOG_INFO, "Disconnected from PowerPoint");
 	if (OnConnectionChanged)
