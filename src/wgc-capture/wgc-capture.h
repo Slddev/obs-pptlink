@@ -73,7 +73,6 @@ public:
 		return m_running.load() ? m_lastHeight : (m_frozenHeight ? m_frozenHeight : m_lastHeight);
 	}
 
-	std::function<void()> OnFrameArrived;
 	std::function<bool()> ShouldAcceptFrame;
 
 private:

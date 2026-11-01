@@ -19,9 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #pragma once
 
 #include <obs-module.h>
-#include "../wgc-capture/wgc-capture.h"
-#include "../com-bridge/ppt-com-bridge.h"
-#include <atomic>
+#include "../wgc-capture/shared-capture.h"
 
 namespace sources {
 
@@ -29,16 +27,7 @@ void RegisterSlideSource();
 
 struct SlideSource {
 	obs_source_t *source = nullptr;
-
-	wgc::CaptureSession capture;
-	ppt::ComBridge *bridge = nullptr;
-	gs_texture_t *texture = nullptr;
-
-	HWND lastHwnd = nullptr;
-	float pollAccum = 0.5f;
-	bool bridgeConnected = false;
-
-	std::atomic<bool> slideshowActive{false};
+	wgc::SharedCapture *capture = nullptr;
 
 	void RenderFrame(gs_effect_t *effect);
 };

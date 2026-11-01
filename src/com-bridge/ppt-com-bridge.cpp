@@ -448,6 +448,12 @@ SlideInfo ComBridge::GetSlideInfo() const
 	return m_state;
 }
 
+HWND ComBridge::GetSlideshowHwnd() const
+{
+	std::lock_guard<std::mutex> lk(m_mutex);
+	return m_state.slideshowHwnd;
+}
+
 void ComBridge::PostCommand(Command cmd)
 {
 	{
@@ -784,6 +790,26 @@ void ComBridge::PollState()
 
 	IDispatch *pPres = DispGetObj(m_pShow, L"Presentation");
 	if (pPres) {
+		IDispatch *pPS = DispGetObj(pPres, L"PageSetup");
+		if (pPS) {
+			VARIANT vs;
+			VariantInit(&vs);
+			double sw = 0, sh = 0;
+			if (SUCCEEDED(DispGetProp(pPS, L"SlideWidth", &vs))) {
+				if (SUCCEEDED(VariantChangeType(&vs, &vs, 0, VT_R8)))
+					sw = vs.dblVal;
+				VariantClear(&vs);
+			}
+			if (SUCCEEDED(DispGetProp(pPS, L"SlideHeight", &vs))) {
+				if (SUCCEEDED(VariantChangeType(&vs, &vs, 0, VT_R8)))
+					sh = vs.dblVal;
+				VariantClear(&vs);
+			}
+			if (sw > 0 && sh > 0)
+				m_slideAspect.store(static_cast<float>(sw / sh));
+			pPS->Release();
+		}
+
 		IDispatch *pSlides = DispGetObj(pPres, L"Slides");
 		if (pSlides) {
 			total = DispGetInt(pSlides, L"Count");
@@ -818,7 +844,10 @@ void ComBridge::PollState()
 			if (cur != m_lastExportedIndex) {
 				std::wstring outPath = GetNextSlideThumbPath();
 				DeleteFileW(outPath.c_str());
-				if (!pNext || SUCCEEDED(DispCallExport(pNext, outPath.c_str(), 960, 540)))
+				constexpr int thumbWidth = 1920;
+				int thumbHeight = static_cast<int>(thumbWidth / m_slideAspect.load() + 0.5f);
+				if (!pNext ||
+				    SUCCEEDED(DispCallExport(pNext, outPath.c_str(), thumbWidth, thumbHeight)))
 					m_lastExportedIndex = cur;
 			}
 
@@ -841,32 +870,6 @@ void ComBridge::PollState()
 				showHwnd = reinterpret_cast<HWND>(static_cast<uintptr_t>(vh.llVal));
 			}
 			VariantClear(&vh);
-		}
-	}
-
-	{
-		IDispatch *pPres2 = DispGetObj(m_pShow, L"Presentation");
-		if (pPres2) {
-			IDispatch *pPS = DispGetObj(pPres2, L"PageSetup");
-			if (pPS) {
-				VARIANT vs;
-				VariantInit(&vs);
-				double sw = 0, sh = 0;
-				if (SUCCEEDED(DispGetProp(pPS, L"SlideWidth", &vs))) {
-					if (SUCCEEDED(VariantChangeType(&vs, &vs, 0, VT_R8)))
-						sw = vs.dblVal;
-					VariantClear(&vs);
-				}
-				if (SUCCEEDED(DispGetProp(pPS, L"SlideHeight", &vs))) {
-					if (SUCCEEDED(VariantChangeType(&vs, &vs, 0, VT_R8)))
-						sh = vs.dblVal;
-					VariantClear(&vs);
-				}
-				if (sw > 0 && sh > 0)
-					m_slideAspect.store(static_cast<float>(sw / sh));
-				pPS->Release();
-			}
-			pPres2->Release();
 		}
 	}
 

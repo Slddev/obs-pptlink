@@ -68,6 +68,8 @@ target_sources(
     src/com-bridge/ppt-com-bridge.h
     src/wgc-capture/wgc-capture.cpp
     src/wgc-capture/wgc-capture.h
+    src/wgc-capture/shared-capture.cpp
+    src/wgc-capture/shared-capture.h
     src/sources/source-slide.cpp
     src/sources/source-slide.h
     src/sources/source-presenter.cpp

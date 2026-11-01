@@ -27,6 +27,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <gdiplus.h>
 
 extern ppt::ComBridge *g_bridge;
+extern wgc::SharedCapture *g_capture;
 
 namespace {
 
@@ -252,10 +253,11 @@ static void *presenter_create(obs_data_t *settings, obs_source_t *source)
 	ctx->notes_source = obs_source_create_private("text_gdiplus", "presenter_notes_txt", nullptr);
 	ctx->counter_source = obs_source_create_private("text_gdiplus", "presenter_counter_txt", nullptr);
 
-	ctx->currentCapture.Init(nullptr);
-	ctx->currentCapture.OnFrameArrived = nullptr;
-
 	obs_leave_graphics();
+
+	ctx->capture = g_capture;
+	if (ctx->capture)
+		ctx->capture->AddUser();
 
 	obs_source_update(source, settings);
 
@@ -266,8 +268,8 @@ static void *presenter_create(obs_data_t *settings, obs_source_t *source)
 static void presenter_destroy(void *data)
 {
 	auto *ctx = static_cast<PresenterSource *>(data);
-	ctx->currentCapture.OnFrameArrived = nullptr;
-	ctx->currentCapture.Destroy();
+	if (ctx->capture)
+		ctx->capture->RemoveUser();
 
 	if (ctx->notes_source) {
 		obs_source_release(ctx->notes_source);
@@ -435,22 +437,8 @@ static void presenter_tick(void *data, float /*seconds*/)
 		ctx->nextTexSlide = ctx->currentSlide;
 	}
 
-	if (ctx->bridge->IsConnected())
-		ctx->currentCapture.SetSlideAspect(ctx->bridge->GetSlideAspect());
-
-	HWND hwnd = info.slideshowHwnd;
-	if (!hwnd)
-		hwnd = wgc::FindSlideshowWindow();
-
-	if (hwnd && hwnd != ctx->lastHwnd) {
-		ctx->lastHwnd = hwnd;
-		ctx->currentCapture.StartCapture(hwnd);
-	} else if (!hwnd && ctx->currentCapture.IsRunning()) {
-		ctx->currentCapture.StopCapture();
-		ctx->lastHwnd = nullptr;
-
+	if (ctx->currentSlide == 0 && ctx->nextTexSlide != -1) {
 		obs_enter_graphics();
-		ctx->currentTex = nullptr;
 		if (ctx->nextTex) {
 			gs_texture_destroy(ctx->nextTex);
 			ctx->nextTex = nullptr;
@@ -479,10 +467,11 @@ void PresenterSource::RenderCurrentSlide()
 	DrawFilledRect((float)r.x, (float)r.y, (float)r.cx, (float)r.cy, 0xFF000000);
 
 	gs_texture_t *tex = nullptr;
-	currentTex = currentCapture.AcquireLatestFrame(tex) ? tex : nullptr;
+	if (!capture || !capture->AcquireFrame(tex))
+		tex = nullptr;
 
-	if (currentTex) {
-		DrawTexture(currentTex, (float)r.x, (float)r.y, (float)r.cx, (float)r.cy);
+	if (tex) {
+		DrawTexture(tex, (float)r.x, (float)r.y, (float)r.cx, (float)r.cy);
 	} else {
 		DrawFilledRect((float)r.x + 10, (float)r.cy * 0.5f - 20, (float)r.cx - 20, 40, 0x44FFFFFF);
 	}

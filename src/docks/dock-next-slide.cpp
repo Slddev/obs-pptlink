@@ -52,7 +52,10 @@ void NextSlidePreviewLabel::updateScaled()
 {
 	if (m_source.isNull())
 		return;
-	QLabel::setPixmap(m_source.scaled(size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+	qreal dpr = devicePixelRatioF();
+	QPixmap scaled = m_source.scaled(size() * dpr, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+	scaled.setDevicePixelRatio(dpr);
+	QLabel::setPixmap(scaled);
 }
 
 void NextSlidePreviewLabel::paintEvent(QPaintEvent *e)

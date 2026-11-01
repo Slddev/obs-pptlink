@@ -396,9 +396,6 @@ void CaptureSession::OnFrameArrivedInternal(winrt::Windows::Graphics::Capture::D
 		if (!copied)
 			return;
 
-		if (OnFrameArrived)
-			OnFrameArrived();
-
 		if (sizeChanged) {
 			winrt::Windows::Graphics::SizeInt32 newSize;
 			newSize.Width = static_cast<int32_t>(fw);

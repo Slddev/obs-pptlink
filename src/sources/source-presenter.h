@@ -19,7 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #pragma once
 
 #include <obs-module.h>
-#include "../wgc-capture/wgc-capture.h"
+#include "../wgc-capture/shared-capture.h"
 #include "../com-bridge/ppt-com-bridge.h"
 #include <string>
 
@@ -30,11 +30,7 @@ void RegisterPresenterSource();
 struct PresenterSource {
 	obs_source_t *source = nullptr;
 	ppt::ComBridge *bridge = nullptr;
-
-	// Live current-slide capture
-	wgc::CaptureSession currentCapture;
-	gs_texture_t *currentTex = nullptr;
-	HWND lastHwnd = nullptr;
+	wgc::SharedCapture *capture = nullptr;
 
 	// Next-slide static thumbnail
 	gs_texture_t *nextTex = nullptr;

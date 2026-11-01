@@ -23,6 +23,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "sources/source-slide.h"
 #include "hotkeys.h"
 #include "wgc-capture/wgc-capture.h"
+#include "wgc-capture/shared-capture.h"
 #include <gdiplus.h>
 #include "docks/dock-next-slide.h"
 
@@ -30,6 +31,7 @@ OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
 ppt::ComBridge *g_bridge = nullptr;
+wgc::SharedCapture *g_capture = nullptr;
 
 static ULONG_PTR g_gdiplusToken = 0;
 
@@ -70,6 +72,9 @@ MODULE_EXPORT bool obs_module_load()
 		return false;
 	}
 
+	g_capture = new wgc::SharedCapture(g_bridge);
+	g_capture->Start();
+
 	// Register OBS source types
 	sources::RegisterSlideSource();
 	sources::RegisterPresenterSource();
@@ -96,6 +101,12 @@ MODULE_EXPORT void obs_module_unload()
 	if (g_gdiplusToken) {
 		Gdiplus::GdiplusShutdown(g_gdiplusToken);
 		g_gdiplusToken = 0;
+	}
+
+	if (g_capture) {
+		g_capture->Stop();
+		delete g_capture;
+		g_capture = nullptr;
 	}
 
 	if (g_bridge) {

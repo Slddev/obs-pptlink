@@ -21,7 +21,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 #include <graphics/graphics.h>
 
-extern ppt::ComBridge *g_bridge;
+extern wgc::SharedCapture *g_capture;
 
 namespace sources {
 
@@ -34,24 +34,9 @@ static void *slide_source_create(obs_data_t * /*settings*/, obs_source_t *source
 {
 	SlideSource *ctx = new SlideSource();
 	ctx->source = source;
-	ctx->bridge = g_bridge;
-
-	obs_enter_graphics();
-
-	if (!ctx->capture.Init(nullptr)) {
-		obs_log(LOG_ERROR, "SlideSource: WGC init failed");
-	}
-
-	ctx->capture.OnFrameArrived = [source]() {
-		obs_source_update(source, nullptr);
-	};
-
-	ctx->capture.ShouldAcceptFrame = [ctx]() {
-		return ctx->slideshowActive.load();
-	};
-
-	obs_leave_graphics();
-
+	ctx->capture = g_capture;
+	if (ctx->capture)
+		ctx->capture->AddUser();
 	return ctx;
 }
 
@@ -59,67 +44,23 @@ static void slide_source_destroy(void *data)
 {
 	auto *ctx = static_cast<SlideSource *>(data);
 
-	ctx->capture.Destroy();
+	if (ctx->capture)
+		ctx->capture->RemoveUser();
 	delete ctx;
 }
 
 static uint32_t slide_source_get_width(void *data)
 {
 	auto *ctx = static_cast<SlideSource *>(data);
-	uint32_t w = ctx->capture.Width();
+	uint32_t w = ctx->capture ? ctx->capture->Width() : 0;
 	return w > 0 ? w : 1920;
 }
 
 static uint32_t slide_source_get_height(void *data)
 {
 	auto *ctx = static_cast<SlideSource *>(data);
-	uint32_t h = ctx->capture.Height();
+	uint32_t h = ctx->capture ? ctx->capture->Height() : 0;
 	return h > 0 ? h : 1080;
-}
-
-static void slide_source_tick(void *data, float seconds)
-{
-	auto *ctx = static_cast<SlideSource *>(data);
-	if (!ctx)
-		return;
-
-	if (ctx->bridge) {
-		bool connected = ctx->bridge->IsConnected();
-		if (connected != ctx->bridgeConnected) {
-			ctx->bridgeConnected = connected;
-			if (!connected)
-				ctx->slideshowActive.store(false);
-		}
-	}
-
-	if (ctx->capture.IsRunning() && !ctx->slideshowActive.load()) {
-		ctx->lastHwnd = nullptr;
-		ctx->capture.StopCapture();
-	}
-
-	ctx->pollAccum += seconds;
-	if (ctx->pollAccum < 0.5f)
-		return;
-	ctx->pollAccum = 0.0f;
-
-	HWND hwnd = nullptr;
-	if (ctx->bridge && ctx->bridge->IsConnected())
-		hwnd = ctx->bridge->GetSlideInfo().slideshowHwnd;
-	if (!hwnd)
-		hwnd = wgc::FindSlideshowWindow(nullptr);
-
-	if (hwnd != ctx->lastHwnd) {
-		ctx->lastHwnd = hwnd;
-		if (hwnd) {
-			ctx->slideshowActive.store(true);
-			ctx->capture.StartCapture(hwnd);
-		} else {
-			ctx->capture.StopCapture();
-		}
-	}
-
-	if (ctx->bridge && ctx->bridge->IsConnected())
-		ctx->capture.SetSlideAspect(ctx->bridge->GetSlideAspect());
 }
 
 static void slide_source_render(void *data, gs_effect_t *effect)
@@ -133,7 +74,9 @@ static void slide_source_render(void *data, gs_effect_t *effect)
 
 void SlideSource::RenderFrame(gs_effect_t *effect)
 {
-	capture.AcquireLatestFrame(texture);
+	gs_texture_t *texture = nullptr;
+	if (capture)
+		capture->AcquireFrame(texture);
 
 	if (!texture)
 		return;
@@ -173,7 +116,6 @@ void RegisterSlideSource()
 	info.get_name = slide_source_get_name;
 	info.create = slide_source_create;
 	info.destroy = slide_source_destroy;
-	info.video_tick = slide_source_tick;
 	info.video_render = slide_source_render;
 	info.get_width = slide_source_get_width;
 	info.get_height = slide_source_get_height;

@@ -78,6 +78,7 @@ public:
 
 	// -- State access (thread-safe) --
 	SlideInfo GetSlideInfo() const;
+	HWND GetSlideshowHwnd() const;
 	bool IsConnected() const { return m_connected.load(); }
 	// Slide aspect ratio (width/height) read from PageSetup.
 	// Returns 16/9 until the bridge connects and reads a presentation.
