@@ -18,12 +18,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "ppt-com-bridge.h"
 #include <obs-module.h>
+#include <plugin-support.h>
 
 #include <oleauto.h>
 #include <thread>
 #include <chrono>
-
-#pragma comment(lib, "shcore")
 
 namespace {
 
@@ -213,7 +212,7 @@ IDispatch *FindNextVisibleSlide(IDispatch *pSlides, int fromIndex, int total)
 	return nullptr;
 }
 
-}
+} // namespace
 
 namespace ppt {
 
@@ -276,7 +275,7 @@ void ComBridge::ThreadProc()
 {
 	HRESULT hrCo = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 	if (FAILED(hrCo) && hrCo != RPC_E_CHANGED_MODE) {
-		blog(LOG_ERROR, "[obs-pptlink] CoInitializeEx failed: 0x%08X", hrCo);
+		obs_log(LOG_ERROR, "CoInitializeEx failed: 0x%08X", hrCo);
 		return;
 	}
 
@@ -383,7 +382,7 @@ bool ComBridge::TryConnect()
 	}
 
 	m_connected.store(true);
-	blog(LOG_INFO, "[obs-pptlink] Connected to PowerPoint slideshow");
+	obs_log(LOG_INFO, "Connected to PowerPoint slideshow");
 
 	if (OnConnectionChanged)
 		OnConnectionChanged(true);
@@ -413,7 +412,7 @@ void ComBridge::Disconnect()
 		m_state = {};
 	}
 
-	blog(LOG_INFO, "[obs-pptlink] Disconnected from PowerPoint");
+	obs_log(LOG_INFO, "Disconnected from PowerPoint");
 	if (OnConnectionChanged)
 		OnConnectionChanged(false);
 }
@@ -421,7 +420,7 @@ void ComBridge::Disconnect()
 void ComBridge::PollState()
 {
 	if (!m_pView) {
-		blog(LOG_WARNING, "[obs-pptlink] PollState: m_pView is null!");
+		obs_log(LOG_WARNING, "PollState: m_pView is null!");
 		Disconnect();
 		return;
 	}

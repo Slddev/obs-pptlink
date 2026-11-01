@@ -27,26 +27,66 @@ DisableReadyPage=no
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\bin"; Check: UseModernLayout
+Type: files; Name: "{app}\{#MyAppName}.dll"; Check: not UseModernLayout
+Type: files; Name: "{app}\{#MyAppName}.pdb"; Check: not UseModernLayout
+
 [Files]
-; Recursively include all files from the staged release directory.
 ; Package-Windows.ps1 installs to release\<Config>\<PluginName>\ before running iscc.
 Source: "@CMAKE_CURRENT_SOURCE_DIR@\release\Package\{#MyAppName}\*"; \
-  DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+  DestDir: "{app}"; Flags: ignoreversion; Check: UseModernLayout
+Source: "@CMAKE_CURRENT_SOURCE_DIR@\release\Package\{#MyAppName}\*"; \
+  DestDir: "{app}\bin\64bit"; Flags: ignoreversion; Check: not UseModernLayout
+Source: "@CMAKE_CURRENT_SOURCE_DIR@\release\Package\{#MyAppName}\data\*"; \
+  DestDir: "{app}\data"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
 Name: "{group}\{cm:ProgramOnTheWeb,{#MyAppName}}"; Filename: "{#MyAppURL}"
 
 [Code]
+const
+  MinObsMajor = 31;
+  ModernLayoutObsMajor = 33;
+
+var
+  ObsMajor: Integer;
+
+function GetObsMajor(): Integer;
+var
+  InstallDir, Version: String;
+  P: Integer;
+begin
+  Result := 0;
+  if RegQueryStringValue(HKLM64, 'SOFTWARE\OBS Studio', '', InstallDir) and
+     GetVersionNumbersString(AddBackslash(InstallDir) + 'bin\64bit\obs64.exe', Version) then
+  begin
+    P := Pos('.', Version);
+    if P > 0 then
+      Result := StrToIntDef(Copy(Version, 1, P - 1), 0);
+  end;
+end;
+
+function UseModernLayout(): Boolean;
+begin
+  Result := (ObsMajor = 0) or (ObsMajor >= ModernLayoutObsMajor);
+end;
+
 // Abort if OBS Studio is running — the DLL cannot be replaced while loaded.
 function InitializeSetup(): Boolean;
-var
-  Processes: TStringList;
-  I: Integer;
 begin
   Result := True;
   if CheckForMutexes('OBSMutex') then
   begin
     MsgBox('OBS Studio is running. Please close it before installing {#MyAppName}.', mbError, MB_OK);
+    Result := False;
+    Exit;
+  end;
+
+  ObsMajor := GetObsMajor();
+  if (ObsMajor > 0) and (ObsMajor < MinObsMajor) then
+  begin
+    MsgBox(Format('{#MyAppName} requires OBS Studio %d or later. Please update OBS Studio before installing.', [MinObsMajor]), mbError, MB_OK);
     Result := False;
   end;
 end;

@@ -10,7 +10,7 @@ Captures animations, transitions, and embedded video natively using Windows Grap
 | | Version |
 |---|---|
 | Windows | 10 1903 (build 18362) or later |
-| OBS Studio | 30.0 or later |
+| OBS Studio | 31.0 or later |
 | Microsoft PowerPoint | 2016 or later (Microsoft 365 recommended) |
 
 ---
@@ -19,10 +19,10 @@ Captures animations, transitions, and embedded video natively using Windows Grap
 
 1. Download the latest `obs-pptlink-*-windows-x64-Installer.exe` from the [Releases](https://github.com/Slddev/obs-pptlink/releases/latest) page.
 2. Close OBS Studio if it is running.
-3. Run the installer — it will place the plugin files in the correct OBS directory automatically.
+3. Run the installer — it detects your OBS version, places the plugin files in the correct OBS directory and upgrades any previous installation automatically.
 4. Start OBS Studio.
 
-Alternatively, download the `.zip` archive and extract it into your OBS Studio installation directory (e.g. `C:\Program Files\obs-studio`).
+Alternatively, download the `.zip` archive and extract it into `C:\ProgramData\obs-studio\plugins`, so the plugin ends up at `C:\ProgramData\obs-studio\plugins\obs-pptlink\obs-pptlink.dll`. On OBS 31 and 32, move `obs-pptlink.dll` and `obs-pptlink.pdb` into `C:\ProgramData\obs-studio\plugins\obs-pptlink\bin\64bit\` instead.
 
 ---
 
@@ -72,8 +72,8 @@ cmake --preset windows-x64
 # Build
 cmake --build --preset windows-x64
 
-# Install to a custom location
-cmake --install build_x64 --prefix "C:\Program Files\obs-studio"
+# Install to C:\ProgramData\obs-studio\plugins
+cmake --install build_x64 --config RelWithDebInfo
 ```
 
 Or open the folder in Visual Studio 2022 and select the preset from the toolbar.

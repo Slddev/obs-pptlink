@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "dock-next-slide.h"
 #include "dock-notes.h"
 #include <obs-module.h>
+#include <plugin-support.h>
 #include <obs-frontend-api.h>
 #include <QPainter>
 #include <QResizeEvent>
@@ -209,7 +210,7 @@ void RegisterDocks(ppt::ComBridge *bridge)
 
 	obs_frontend_pop_ui_translation();
 
-	blog(LOG_INFO, "[obs-pptlink] Registered docks: PPTNextSlideDock, PPTNotesDock");
+	obs_log(LOG_INFO, "Registered docks: PPTNextSlideDock, PPTNotesDock");
 }
 
 } // namespace dock

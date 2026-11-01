@@ -18,6 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "source-slide.h"
 #include <obs-module.h>
+#include <plugin-support.h>
 #include <graphics/graphics.h>
 
 extern ppt::ComBridge *g_bridge;
@@ -39,7 +40,7 @@ static void *slide_source_create(obs_data_t *settings, obs_source_t *source)
 	obs_enter_graphics();
 
 	if (!ctx->capture.Init(nullptr)) {
-		blog(LOG_ERROR, "[PPTLink] SlideSource: WGC init failed");
+		obs_log(LOG_ERROR, "SlideSource: WGC init failed");
 	}
 
 	ctx->capture.OnFrameArrived = [source]() {
@@ -215,7 +216,7 @@ void RegisterSlideSource()
 	info.get_defaults = slide_source_get_defaults;
 
 	obs_register_source(&info);
-	blog(LOG_INFO, "[PPTLink] Registered source: ppt_slide_source");
+	obs_log(LOG_INFO, "Registered source: ppt_slide_source");
 }
 
 } // namespace sources

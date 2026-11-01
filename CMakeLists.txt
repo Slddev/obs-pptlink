@@ -38,7 +38,7 @@ endif()
 if(WIN32)
   target_link_libraries(
     ${CMAKE_PROJECT_NAME}
-    PRIVATE ole32 oleaut32 uuid gdiplus windowsapp d3d11 dxgi
+    PRIVATE ole32 oleaut32 uuid gdiplus windowsapp d3d11 dxgi dwmapi
   )
 
   target_compile_options(
@@ -61,7 +61,6 @@ if(WIN32)
       WIN32_LEAN_AND_MEAN
       WINVER=0x0A00
       _WIN32_WINNT=0x0A00
-      PLUGIN_VERSION="${CMAKE_PROJECT_VERSION}"
   )
 else()
   message(FATAL_ERROR "PPTLink only supports Windows (requires COM + WGC)")

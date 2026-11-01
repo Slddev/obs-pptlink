@@ -18,14 +18,13 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "source-presenter.h"
 #include <obs-module.h>
+#include <plugin-support.h>
 #include <graphics/graphics.h>
 #include <graphics/vec4.h>
 #include <util/platform.h>
 #include <cstring>
 #include <vector>
 #include <gdiplus.h>
-
-#pragma comment(lib, "gdiplus.lib")
 
 extern ppt::ComBridge *g_bridge;
 
@@ -239,7 +238,7 @@ static void *presenter_create(obs_data_t *settings, obs_source_t *source)
 
 	obs_source_update(source, settings);
 
-	blog(LOG_INFO, "[PPTLink] PresenterSource created");
+	obs_log(LOG_INFO, "PresenterSource created");
 	return ctx;
 }
 
@@ -265,7 +264,7 @@ static void presenter_destroy(void *data)
 	obs_leave_graphics();
 
 	delete ctx;
-	blog(LOG_INFO, "[PPTLink] PresenterSource destroyed");
+	obs_log(LOG_INFO, "PresenterSource destroyed");
 }
 
 static void presenter_update(void *data, obs_data_t *settings)
@@ -600,7 +599,7 @@ void RegisterPresenterSource()
 	info.get_defaults = presenter_get_defaults;
 
 	obs_register_source(&info);
-	blog(LOG_INFO, "[PPTLink] Registered source: ppt_presenter_source");
+	obs_log(LOG_INFO, "Registered source: ppt_presenter_source");
 }
 
 } // namespace sources

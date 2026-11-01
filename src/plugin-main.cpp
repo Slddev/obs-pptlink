@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include <obs-module.h>
+#include <plugin-support.h>
 #ifdef HAVE_OBS_FRONTEND_API
 #include <obs-frontend-api.h>
 #endif
@@ -29,7 +30,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "docks/dock-next-slide.h"
 
 OBS_DECLARE_MODULE()
-OBS_MODULE_USE_DEFAULT_LOCALE("obs-pptlink", "en-US")
+OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
 ppt::ComBridge *g_bridge = nullptr;
 
@@ -48,13 +49,13 @@ MODULE_EXPORT const char *obs_module_description()
 
 MODULE_EXPORT bool obs_module_load()
 {
-	blog(LOG_INFO, "[PPTLink] Loading PPTLink v" PLUGIN_VERSION);
+	obs_log(LOG_INFO, "Loading PPTLink v%s", PLUGIN_VERSION);
 
 	// Check WGC availability before anything else
 	if (!wgc::IsWGCSupported()) {
-		blog(LOG_ERROR, "[PPTLink] Windows Graphics Capture is not supported "
-				"on this system (requires Windows 10 1903 / build 18362 or later). "
-				"Plugin will not load.");
+		obs_log(LOG_ERROR, "Windows Graphics Capture is not supported "
+				   "on this system (requires Windows 10 1903 / build 18362 or later). "
+				   "Plugin will not load.");
 		return false;
 	}
 
@@ -62,11 +63,11 @@ MODULE_EXPORT bool obs_module_load()
 	g_bridge = new ppt::ComBridge();
 
 	g_bridge->OnConnectionChanged = [](bool connected) {
-		blog(LOG_INFO, "[PPTLink] PowerPoint %s", connected ? "connected" : "disconnected");
+		obs_log(LOG_INFO, "PowerPoint %s", connected ? "connected" : "disconnected");
 	};
 
 	if (!g_bridge->Start()) {
-		blog(LOG_ERROR, "[PPTLink] Failed to start COM bridge");
+		obs_log(LOG_ERROR, "Failed to start COM bridge");
 		delete g_bridge;
 		g_bridge = nullptr;
 		return false;
@@ -97,13 +98,13 @@ MODULE_EXPORT bool obs_module_load()
 	Gdiplus::GdiplusStartupInput si;
 	Gdiplus::GdiplusStartup(&g_gdiplusToken, &si, nullptr);
 
-	blog(LOG_INFO, "[PPTLink] Plugin loaded successfully");
+	obs_log(LOG_INFO, "Plugin loaded successfully");
 	return true;
 }
 
 MODULE_EXPORT void obs_module_unload()
 {
-	blog(LOG_INFO, "[PPTLink] Unloading PPTLink");
+	obs_log(LOG_INFO, "Unloading PPTLink");
 
 	hotkeys::Unregister();
 
@@ -118,7 +119,7 @@ MODULE_EXPORT void obs_module_unload()
 		g_bridge = nullptr;
 	}
 
-	blog(LOG_INFO, "[PPTLink] Plugin unloaded");
+	obs_log(LOG_INFO, "Plugin unloaded");
 }
 
 } // extern "C"
