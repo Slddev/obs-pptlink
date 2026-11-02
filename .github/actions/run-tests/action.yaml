@@ -1,0 +1,39 @@
+name: Build and run unit tests
+
+description: Builds the unit tests for specified architecture and build config and runs them
+
+inputs:
+  target:
+    description: Target architecture for dependencies
+    required: true
+  config:
+    description: Build configuration
+    required: false
+    default: RelWithDebInfo
+
+runs:
+  using: composite
+  steps:
+    - name: Check Runner Operating System 🏃‍♂️
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        : Check Runner Operating System 🏃‍♂️
+        echo "::notice::run-tests action requires a Windows-based runner."
+        exit 2
+
+    - name: Run Windows Tests
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        # Run Windows Tests
+        if ( $Env:RUNNER_DEBUG -ne $null ) {
+          Set-PSDebug -Trace 1
+        }
+
+        $TestArgs = @{
+          Target = '${{ inputs.target }}'
+          Configuration = '${{ inputs.config }}'
+        }
+
+        .github/scripts/Test-Windows.ps1 @TestArgs

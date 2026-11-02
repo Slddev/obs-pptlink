@@ -94,6 +94,12 @@ jobs:
           target: x64
           config: ${{ needs.check-event.outputs.config }}
 
+      - name: Run Unit Tests 🧪
+        uses: ./.github/actions/run-tests
+        with:
+          target: x64
+          config: ${{ needs.check-event.outputs.config }}
+
       - name: Package Plugin 📀
         uses: ./.github/actions/package-plugin
         with:
