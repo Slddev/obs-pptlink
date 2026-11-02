@@ -20,16 +20,16 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace sources {
 
-PresenterLayout ComputePresenterLayout(LayoutPreset preset, uint32_t width, uint32_t height, float splitX, float splitY)
+PresenterLayout ComputePresenterLayout(LayoutPreset preset, uint32_t width, uint32_t height, float splitX, float splitY,
+				       int barHeight)
 {
 	PresenterLayout layout;
 	int W = (int)width;
 	int H = (int)height;
 
-	int barH = 60;
-	layout.controls = {0, H - barH, W, barH};
+	layout.controls = {0, H - barHeight, W, barHeight};
 
-	int availableH = H - barH;
+	int availableH = H - barHeight;
 
 	if (preset == LayoutPreset::Classic) {
 		int notesH = (int)(availableH * 0.15f);

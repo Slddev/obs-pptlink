@@ -38,38 +38,61 @@ struct PresenterSource {
 	gs_texture_t *nextTex = nullptr;
 	std::shared_ptr<const ppt::SlideThumb> nextThumb;
 
-	// Private text handles for native OBS font processing
-	obs_source_t *notes_source = nullptr;
-	obs_source_t *counter_source = nullptr;
-	std::wstring shownNotes;
-	std::wstring shownCounter;
-	uint32_t shownTextColor = 0;
-	uint32_t shownWrapWidth = 0;
+	// Private text source, only updated when its content changes
+	struct Text {
+		obs_source_t *source = nullptr;
+		std::wstring text;
+		uint32_t color = 0;
+		uint32_t size = 0;
+		bool bold = false;
+		uint32_t cx = 0;
+		uint32_t cy = 0;
+
+		void Set(const std::wstring &text, uint32_t color, uint32_t size, bool bold, uint32_t cx = 0,
+			 uint32_t cy = 0);
+		void Draw(float x, float y) const;
+		uint32_t Width() const;
+		uint32_t Height() const;
+	};
+
+	Text notes;
+	Text counter;
+	Text labelCurrent;
+	Text labelNext;
+	Text labelNotes;
+	Text statusCurrent;
+	Text statusNext;
 
 	std::wstring currentNotes;
 	int currentSlide = 0;
 	int totalSlides = 0;
+	int nextSlide = 0;
+	float slideAspect = 16.0f / 9.0f;
 
 	uint32_t outWidth = 1920;
 	uint32_t outHeight = 1080;
+	float scale = 1.0f;
 
 	PresenterLayout layout;
 
-	std::string themePreset = "yami";
+	bool followTheme = true;
 	LayoutPreset layoutPreset = LayoutPreset::Classic;
 
 	float splitX = 0.65f;
 	float splitY = 0.85f;
 
-	uint32_t colBg = 0xFF1A1A1A;     // Yami bg
-	uint32_t colPanel = 0xFF2D2D2D;  // Yami panel
-	uint32_t colBorder = 0xFF3D3D3D; // Yami border
-	uint32_t colText = 0xFFE0E0E0;   // Yami text
+	// 0xAARRGGBB
+	uint32_t colBg = 0xFF1D1F26;
+	uint32_t colPanel = 0xFF272A33;
+	uint32_t colText = 0xFFFEFEFE;
+	uint32_t colAccent = 0xFF284CB8;
 
 	void ComputeLayout();
-	void RenderCurrentSlide();
-	void RenderNextSlide();
-	void RenderNotes(LayoutRect area);
+	int Px(float value) const;
+	LayoutRect PanelBody(const LayoutRect &panel) const;
+	void RenderCard(const LayoutRect &panel, const Text &label);
+	void RenderSlide(const LayoutRect &panel, const Text &label, gs_texture_t *tex, const Text *status);
+	void RenderNotes();
 	void RenderControls();
 };
 

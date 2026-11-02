@@ -55,7 +55,7 @@ TEST_CASE(layout_controls_bar_spans_bottom)
 {
 	for (LayoutPreset preset : kPresets) {
 		for (auto size : kSizes) {
-			PresenterLayout l = ComputePresenterLayout(preset, size.width, size.height, 0.65f, 0.85f);
+			PresenterLayout l = ComputePresenterLayout(preset, size.width, size.height, 0.65f, 0.85f, 60);
 			int w = static_cast<int>(size.width);
 			int h = static_cast<int>(size.height);
 			CHECK(l.controls.x == 0);
@@ -70,7 +70,7 @@ TEST_CASE(layout_panels_tile_area_above_controls)
 {
 	for (LayoutPreset preset : kPresets) {
 		for (auto size : kSizes) {
-			PresenterLayout l = ComputePresenterLayout(preset, size.width, size.height, 0.65f, 0.85f);
+			PresenterLayout l = ComputePresenterLayout(preset, size.width, size.height, 0.65f, 0.85f, 60);
 			int w = static_cast<int>(size.width);
 			int h = l.controls.y;
 			CHECK(Inside(l.current, w, h));
@@ -86,10 +86,10 @@ TEST_CASE(layout_panels_tile_area_above_controls)
 
 TEST_CASE(layout_presets_emphasise_their_panel)
 {
-	PresenterLayout classic = ComputePresenterLayout(LayoutPreset::Classic, 1920, 1080, 0, 0);
-	PresenterLayout nextDominant = ComputePresenterLayout(LayoutPreset::NextDominant, 1920, 1080, 0, 0);
-	PresenterLayout notesFocused = ComputePresenterLayout(LayoutPreset::NotesFocused, 1920, 1080, 0, 0);
-	PresenterLayout topBottom = ComputePresenterLayout(LayoutPreset::TopBottom, 1920, 1080, 0, 0);
+	PresenterLayout classic = ComputePresenterLayout(LayoutPreset::Classic, 1920, 1080, 0, 0, 60);
+	PresenterLayout nextDominant = ComputePresenterLayout(LayoutPreset::NextDominant, 1920, 1080, 0, 0, 60);
+	PresenterLayout notesFocused = ComputePresenterLayout(LayoutPreset::NotesFocused, 1920, 1080, 0, 0, 60);
+	PresenterLayout topBottom = ComputePresenterLayout(LayoutPreset::TopBottom, 1920, 1080, 0, 0, 60);
 
 	CHECK(classic.current.cx > classic.next.cx);
 	CHECK(nextDominant.next.cx > nextDominant.current.cx);
@@ -100,12 +100,12 @@ TEST_CASE(layout_presets_emphasise_their_panel)
 
 TEST_CASE(layout_custom_follows_splits)
 {
-	PresenterLayout a = ComputePresenterLayout(LayoutPreset::Custom, 1000, 1060, 0.5f, 0.5f);
+	PresenterLayout a = ComputePresenterLayout(LayoutPreset::Custom, 1000, 1060, 0.5f, 0.5f, 60);
 	CHECK(a.current.cx == 500);
 	CHECK(a.next.cx == 500);
 	CHECK(a.notes.cy == 500);
 
-	PresenterLayout b = ComputePresenterLayout(LayoutPreset::Custom, 1000, 1060, 0.25f, 0.75f);
+	PresenterLayout b = ComputePresenterLayout(LayoutPreset::Custom, 1000, 1060, 0.25f, 0.75f, 60);
 	CHECK(b.current.cx == 250);
 	CHECK(b.next.x == 250);
 	CHECK(b.notes.cy == 250);

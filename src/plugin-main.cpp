@@ -22,6 +22,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "com-bridge/ppt-com-bridge.h"
 #include "sources/source-slide.h"
 #include "hotkeys.h"
+#include "theme-colors.h"
 #include "wgc-capture/wgc-capture.h"
 #include "wgc-capture/shared-capture.h"
 #include <gdiplus.h>
@@ -90,6 +91,8 @@ MODULE_EXPORT bool obs_module_load()
 	// Register plugin-level hotkeys
 	hotkeys::Register(g_bridge);
 
+	theme::Init();
+
 	obs_log(LOG_INFO, "Plugin loaded successfully");
 	return true;
 }
@@ -99,6 +102,7 @@ MODULE_EXPORT void obs_module_unload()
 	obs_log(LOG_INFO, "Unloading PPTLink");
 
 	hotkeys::Unregister();
+	theme::Shutdown();
 
 	if (g_capture) {
 		g_capture->Stop();

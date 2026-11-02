@@ -17,11 +17,13 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "source-presenter.h"
+#include "../theme-colors.h"
 #include <obs-module.h>
 #include <plugin-support.h>
 #include <graphics/graphics.h>
 #include <graphics/vec4.h>
 #include <util/platform.h>
+#include <algorithm>
 #include <cstring>
 
 extern ppt::ComBridge *g_bridge;
@@ -29,9 +31,29 @@ extern wgc::SharedCapture *g_capture;
 
 namespace sources {
 
+static std::wstring g_strNoNotes;
+static std::wstring g_strCounter;
+static std::wstring g_strNoSlideshow;
+static std::wstring g_strCurrentSlide;
+static std::wstring g_strNextSlide;
+static std::wstring g_strNotes;
+static std::wstring g_strWaiting;
+static std::wstring g_strEndOfShow;
+
 static uint32_t SwapRedBlue(uint32_t color)
 {
 	return (color & 0xFF00FF00) | ((color & 0xFF) << 16) | ((color >> 16) & 0xFF);
+}
+
+static uint32_t Mix(uint32_t a, uint32_t b, float t)
+{
+	uint32_t out = 0xFF000000;
+	for (int shift = 0; shift < 24; shift += 8) {
+		float ca = (float)((a >> shift) & 0xFF);
+		float cb = (float)((b >> shift) & 0xFF);
+		out |= (uint32_t)(ca + (cb - ca) * t + 0.5f) << shift;
+	}
+	return out;
 }
 
 static std::wstring ModuleTextW(const char *key)
@@ -50,11 +72,9 @@ static void ReplaceArg(std::wstring &text, const wchar_t *arg, int value)
 		text.replace(pos, wcslen(arg), std::to_wstring(value));
 }
 
-static void UpdateTextSource(obs_source_t *source, const std::wstring &text, uint32_t color, uint32_t size, bool wrap,
-			     uint32_t wrap_width)
+static void UpdateTextSource(obs_source_t *source, const std::wstring &text, uint32_t color, uint32_t size, bool bold,
+			     uint32_t cx, uint32_t cy)
 {
-	if (!source)
-		return;
 	obs_data_t *settings = obs_data_create();
 
 	int required_size = os_wcs_to_utf8(text.c_str(), text.length(), nullptr, 0);
@@ -64,28 +84,35 @@ static void UpdateTextSource(obs_source_t *source, const std::wstring &text, uin
 	obs_data_set_string(settings, "text", utf8.c_str());
 
 	obs_data_t *font_obj = obs_data_create();
-	obs_data_set_string(font_obj, "face", "Arial");
+	obs_data_set_string(font_obj, "face", "Segoe UI");
+	obs_data_set_string(font_obj, "style", bold ? "Bold" : "Regular");
 	obs_data_set_int(font_obj, "size", size);
+	obs_data_set_int(font_obj, "flags", bold ? OBS_FONT_BOLD : 0);
 	obs_data_set_obj(settings, "font", font_obj);
 	obs_data_release(font_obj);
 
 	obs_data_set_int(settings, "color", SwapRedBlue(color));
-	if (wrap && wrap_width > 0) {
-		obs_data_set_bool(settings, "wrap", true);
-		obs_data_set_int(settings, "extents_cx", wrap_width);
-		obs_data_set_int(settings, "extents_cy", 2000);
+	bool extents = cx > 0 && cy > 0;
+	obs_data_set_bool(settings, "extents", extents);
+	obs_data_set_bool(settings, "extents_wrap", extents);
+	if (extents) {
+		obs_data_set_int(settings, "extents_cx", cx);
+		obs_data_set_int(settings, "extents_cy", cy);
 	}
 
 	obs_source_update(source, settings);
 	obs_data_release(settings);
 }
 
-static void DrawFilledRect(float x, float y, float w, float h, uint32_t abgr)
+static void DrawFilledRect(float x, float y, float w, float h, uint32_t argb)
 {
+	if (w <= 0 || h <= 0)
+		return;
+
 	gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
 	vec4 col;
-	vec4_set(&col, ((abgr >> 16) & 0xFF) / 255.f, ((abgr >> 8) & 0xFF) / 255.f, (abgr & 0xFF) / 255.f,
-		 ((abgr >> 24) & 0xFF) / 255.f);
+	vec4_set(&col, ((argb >> 16) & 0xFF) / 255.f, ((argb >> 8) & 0xFF) / 255.f, (argb & 0xFF) / 255.f,
+		 ((argb >> 24) & 0xFF) / 255.f);
 	gs_effect_set_vec4(gs_effect_get_param_by_name(solid, "color"), &col);
 
 	gs_matrix_push();
@@ -103,38 +130,50 @@ static void DrawFilledRect(float x, float y, float w, float h, uint32_t abgr)
 	gs_matrix_pop();
 }
 
-static void DrawTexture(gs_texture_t *tex, float x, float y, float w, float h)
+static void FillRect(const LayoutRect &r, uint32_t argb)
 {
-	if (!tex)
-		return;
+	DrawFilledRect((float)r.x, (float)r.y, (float)r.cx, (float)r.cy, argb);
+}
 
-	uint32_t tw = gs_texture_get_width(tex);
-	uint32_t th = gs_texture_get_height(tex);
-	if (!tw || !th)
-		return;
+static void OutlineRect(const LayoutRect &r, int t, uint32_t argb)
+{
+	FillRect({r.x, r.y, r.cx, t}, argb);
+	FillRect({r.x, r.y + r.cy - t, r.cx, t}, argb);
+	FillRect({r.x, r.y + t, t, r.cy - 2 * t}, argb);
+	FillRect({r.x + r.cx - t, r.y + t, t, r.cy - 2 * t}, argb);
+}
 
-	float ar = (float)tw / (float)th;
-	float dstW = w;
-	float dstH = w / ar;
-	if (dstH > h) {
-		dstH = h;
-		dstW = h * ar;
+static LayoutRect FitRect(const LayoutRect &area, float aspect)
+{
+	if (area.cx <= 0 || area.cy <= 0 || aspect <= 0)
+		return {area.x, area.y, 0, 0};
+
+	int w = area.cx;
+	int h = (int)(w / aspect + 0.5f);
+	if (h > area.cy) {
+		h = area.cy;
+		w = (int)(h * aspect + 0.5f);
 	}
-	float ox = x + (w - dstW) * 0.5f;
-	float oy = y + (h - dstH) * 0.5f;
+	return {area.x + (area.cx - w) / 2, area.y + (area.cy - h) / 2, w, h};
+}
+
+static void DrawTexture(gs_texture_t *tex, const LayoutRect &dst)
+{
+	if (!tex || dst.cx <= 0 || dst.cy <= 0)
+		return;
 
 	gs_effect_t *eff = obs_get_base_effect(OBS_EFFECT_OPAQUE);
 	gs_eparam_t *image = gs_effect_get_param_by_name(eff, "image");
 	gs_effect_set_texture(image, tex);
 
 	gs_matrix_push();
-	gs_matrix_translate3f(ox, oy, 0);
+	gs_matrix_translate3f((float)dst.x, (float)dst.y, 0);
 
 	gs_technique_t *tech = gs_effect_get_technique(eff, "Draw");
 	size_t passes = gs_technique_begin(tech);
 	for (size_t i = 0; i < passes; i++) {
 		if (gs_technique_begin_pass(tech, i)) {
-			gs_draw_sprite(tex, 0, (uint32_t)dstW, (uint32_t)dstH);
+			gs_draw_sprite(tex, 0, (uint32_t)dst.cx, (uint32_t)dst.cy);
 			gs_technique_end_pass(tech);
 		}
 	}
@@ -142,9 +181,66 @@ static void DrawTexture(gs_texture_t *tex, float x, float y, float w, float h)
 	gs_matrix_pop();
 }
 
+void PresenterSource::Text::Set(const std::wstring &newText, uint32_t newColor, uint32_t newSize, bool newBold,
+				uint32_t newCx, uint32_t newCy)
+{
+	if (!source ||
+	    (newText == text && newColor == color && newSize == size && newBold == bold && newCx == cx && newCy == cy))
+		return;
+
+	text = newText;
+	color = newColor;
+	size = newSize;
+	bold = newBold;
+	cx = newCx;
+	cy = newCy;
+	UpdateTextSource(source, text, color, size, bold, cx, cy);
+}
+
+void PresenterSource::Text::Draw(float x, float y) const
+{
+	if (!source)
+		return;
+	gs_matrix_push();
+	gs_matrix_translate3f((float)(int)x, (float)(int)y, 0.0f);
+	obs_source_video_render(source);
+	gs_matrix_pop();
+}
+
+uint32_t PresenterSource::Text::Width() const
+{
+	return source ? obs_source_get_width(source) : 0;
+}
+
+uint32_t PresenterSource::Text::Height() const
+{
+	return source ? obs_source_get_height(source) : 0;
+}
+
+int PresenterSource::Px(float value) const
+{
+	return std::max(1, (int)(value * scale + 0.5f));
+}
+
 void PresenterSource::ComputeLayout()
 {
-	layout = ComputePresenterLayout(layoutPreset, outWidth, outHeight, splitX, splitY);
+	scale = std::max(0.25f, std::min(outWidth / 1920.0f, outHeight / 1080.0f));
+
+	int gap = Px(16);
+	layout = ComputePresenterLayout(layoutPreset, outWidth - gap, outHeight - gap, splitX, splitY, Px(64) + gap);
+	for (LayoutRect *r : {&layout.current, &layout.next, &layout.notes, &layout.controls}) {
+		r->x += gap;
+		r->y += gap;
+		r->cx = std::max(0, r->cx - gap);
+		r->cy = std::max(0, r->cy - gap);
+	}
+}
+
+LayoutRect PresenterSource::PanelBody(const LayoutRect &panel) const
+{
+	int header = Px(44);
+	int pad = Px(16);
+	return {panel.x + pad, panel.y + header, std::max(0, panel.cx - 2 * pad), std::max(0, panel.cy - header - pad)};
 }
 
 static const char *presenter_get_name(void *)
@@ -158,8 +254,6 @@ static void *presenter_create(obs_data_t *settings, obs_source_t *source)
 	ctx->source = source;
 	ctx->bridge = g_bridge;
 
-	obs_enter_graphics();
-
 	ctx->outWidth = (uint32_t)obs_data_get_int(settings, "output_width");
 	ctx->outHeight = (uint32_t)obs_data_get_int(settings, "output_height");
 	if (!ctx->outWidth)
@@ -167,10 +261,9 @@ static void *presenter_create(obs_data_t *settings, obs_source_t *source)
 	if (!ctx->outHeight)
 		ctx->outHeight = 1080;
 
-	ctx->notes_source = obs_source_create_private("text_gdiplus", "presenter_notes_txt", nullptr);
-	ctx->counter_source = obs_source_create_private("text_gdiplus", "presenter_counter_txt", nullptr);
-
-	obs_leave_graphics();
+	for (PresenterSource::Text *t : {&ctx->notes, &ctx->counter, &ctx->labelCurrent, &ctx->labelNext,
+					 &ctx->labelNotes, &ctx->statusCurrent, &ctx->statusNext})
+		t->source = obs_source_create_private("text_gdiplus", "presenter_text", nullptr);
 
 	ctx->capture = g_capture;
 	if (ctx->capture)
@@ -188,13 +281,10 @@ static void presenter_destroy(void *data)
 	if (ctx->capture)
 		ctx->capture->RemoveUser();
 
-	if (ctx->notes_source) {
-		obs_source_release(ctx->notes_source);
-		ctx->notes_source = nullptr;
-	}
-	if (ctx->counter_source) {
-		obs_source_release(ctx->counter_source);
-		ctx->counter_source = nullptr;
+	for (PresenterSource::Text *t : {&ctx->notes, &ctx->counter, &ctx->labelCurrent, &ctx->labelNext,
+					 &ctx->labelNotes, &ctx->statusCurrent, &ctx->statusNext}) {
+		obs_source_release(t->source);
+		t->source = nullptr;
 	}
 
 	obs_enter_graphics();
@@ -230,60 +320,45 @@ static void presenter_update(void *data, obs_data_t *settings)
 		ctx->layoutPreset = LayoutPreset::Custom;
 
 	const char *theme = obs_data_get_string(settings, "theme_preset");
-	ctx->themePreset = theme ? theme : "yami";
+	std::string themePreset = theme ? theme : "obs";
+	ctx->followTheme = themePreset == "obs";
 
-	// Apply colors sourced directly from OBS .obt/.ovt theme variable declarations.
-	// Mapping: colBg    -> --grey8 (palette_window / darkest bg)
-	//          colPanel -> --grey6 (palette_dark  / dock/panel bg)
-	//          colBorder-> --grey5 (palette_mid   / separator / input border)
-	//          colText  -> --text  (palette_windowText)
-	if (ctx->themePreset == "yami") {
-		// Yami -- default OBS dark theme, navy-blue tinted grey ramp.
-		// --grey8 #1e2328, --grey6 #2c3440, --grey5 #333d4a, --primary #336699
-		ctx->colBg = 0xFF1E2328;
-		ctx->colPanel = 0xFF2C3440;
-		ctx->colBorder = 0xFF333D4A;
-		ctx->colText = 0xFFEEEEEE;
-	} else if (ctx->themePreset == "acri") {
-		// Acri -- "darker than Dark", deep near-black with slight blue tint.
-		// --grey8 #0d0f14, --grey6 #181d26, --grey5 #1e2530, --primary #2d6a9f
+	// Fixed presets use the window, panel, text and accent colours of the matching OBS theme
+	if (themePreset == "yami") {
+		ctx->colBg = 0xFF1D1F26;
+		ctx->colPanel = 0xFF272A33;
+		ctx->colText = 0xFFFEFEFE;
+		ctx->colAccent = 0xFF284CB8;
+	} else if (themePreset == "acri") {
 		ctx->colBg = 0xFF0D0F14;
 		ctx->colPanel = 0xFF181D26;
-		ctx->colBorder = 0xFF1E2530;
 		ctx->colText = 0xFFDDDDDD;
-	} else if (ctx->themePreset == "rachni") {
-		// Rachni -- teal + red highlights on very dark purple-tinted base.
-		// --grey8 #12101a, --grey6 #1e1a2a, --grey5 #252235, --primary teal #00b4c8
+		ctx->colAccent = 0xFF2D6A9F;
+	} else if (themePreset == "rachni") {
 		ctx->colBg = 0xFF12101A;
 		ctx->colPanel = 0xFF1E1A2A;
-		ctx->colBorder = 0xFF252235;
 		ctx->colText = 0xFFDDDDDD;
-	} else if (ctx->themePreset == "grey") {
-		// Grey -- neutral greyscale, no blue tint. Same Yami proportions.
-		// --grey8 #131313, --grey6 #272727, --grey5 #323232, --primary #336699
+		ctx->colAccent = 0xFF00B4C8;
+	} else if (themePreset == "grey") {
 		ctx->colBg = 0xFF131313;
 		ctx->colPanel = 0xFF272727;
-		ctx->colBorder = 0xFF323232;
 		ctx->colText = 0xFFEEEEEE;
-	} else if (ctx->themePreset == "system_light") {
-		// Light -- inverted Yami palette for light desktop environments.
-		// Bg is near-white, panel slightly darker, accent same blue.
-		ctx->colBg = 0xFFF0F0F0;
-		ctx->colPanel = 0xFFDEDEDE;
-		ctx->colBorder = 0xFFB8B8B8;
+		ctx->colAccent = 0xFF336699;
+	} else if (themePreset == "system_light") {
+		ctx->colBg = 0xFFD3D3D3;
+		ctx->colPanel = 0xFFE5E5E5;
 		ctx->colText = 0xFF1A1A1A;
-	} else if (ctx->themePreset == "dark_legacy") {
-		// Dark (Classic) -- pre-Yami OBS default, pure neutral dark, no tint.
-		// Straight-grey ramp matching the legacy Dark.qss palette.
+		ctx->colAccent = 0xFF3A6FD8;
+	} else if (themePreset == "dark_legacy") {
 		ctx->colBg = 0xFF1C1C1C;
 		ctx->colPanel = 0xFF292929;
-		ctx->colBorder = 0xFF3D3D3D;
 		ctx->colText = 0xFFCCCCCC;
-	} else { // Custom -- manual colour pickers
+		ctx->colAccent = 0xFF336699;
+	} else if (themePreset == "custom") {
 		ctx->colBg = 0xFF000000 | SwapRedBlue((uint32_t)obs_data_get_int(settings, "col_bg"));
 		ctx->colPanel = 0xFF000000 | SwapRedBlue((uint32_t)obs_data_get_int(settings, "col_panel"));
-		ctx->colBorder = 0xFF000000 | SwapRedBlue((uint32_t)obs_data_get_int(settings, "col_border"));
 		ctx->colText = 0xFF000000 | SwapRedBlue((uint32_t)obs_data_get_int(settings, "col_text"));
+		ctx->colAccent = 0xFF000000 | SwapRedBlue((uint32_t)obs_data_get_int(settings, "col_accent"));
 	}
 }
 
@@ -307,30 +382,40 @@ static void presenter_tick(void *data, float /*seconds*/)
 
 	ctx->currentSlide = info.currentSlide;
 	ctx->totalSlides = info.totalSlides;
+	ctx->nextSlide = info.nextSlide;
 	ctx->currentNotes = info.notes;
+	ctx->slideAspect = ctx->bridge->GetSlideAspect();
 
-	bool colorChanged = ctx->colText != ctx->shownTextColor;
-	ctx->shownTextColor = ctx->colText;
-
-	if (ctx->notes_source) {
-		uint32_t wWidth = ctx->layout.notes.cx > 40 ? ctx->layout.notes.cx - 40 : 400;
-		std::wstring notes = ctx->currentNotes.empty() ? ModuleTextW("PPT.PresenterSource.NoNotes")
-							       : ctx->currentNotes;
-		if (colorChanged || wWidth != ctx->shownWrapWidth || notes != ctx->shownNotes) {
-			UpdateTextSource(ctx->notes_source, notes, ctx->colText, 24, true, wWidth);
-			ctx->shownNotes = notes;
-			ctx->shownWrapWidth = wWidth;
-		}
+	if (ctx->followTheme) {
+		theme::Colors c = theme::Get();
+		ctx->colBg = c.bg;
+		ctx->colPanel = c.panel;
+		ctx->colText = c.text;
+		ctx->colAccent = c.accent;
 	}
-	if (ctx->counter_source) {
-		std::wstring counter = ModuleTextW("PPT.PresenterSource.SlideCounter");
+
+	ctx->ComputeLayout();
+
+	uint32_t muted = Mix(ctx->colPanel, ctx->colText, 0.55f);
+	ctx->labelCurrent.Set(g_strCurrentSlide, muted, ctx->Px(18), true);
+	ctx->labelNext.Set(g_strNextSlide, muted, ctx->Px(18), true);
+	ctx->labelNotes.Set(g_strNotes, muted, ctx->Px(18), true);
+	ctx->statusCurrent.Set(g_strWaiting, muted, ctx->Px(26), false);
+	ctx->statusNext.Set(g_strEndOfShow, muted, ctx->Px(22), false);
+
+	LayoutRect body = ctx->PanelBody(ctx->layout.notes);
+	if (ctx->currentNotes.empty())
+		ctx->notes.Set(g_strNoNotes, muted, ctx->Px(28), false, body.cx, body.cy);
+	else
+		ctx->notes.Set(ctx->currentNotes, ctx->colText, ctx->Px(28), false, body.cx, body.cy);
+
+	std::wstring counter = g_strNoSlideshow;
+	if (ctx->currentSlide > 0) {
+		counter = g_strCounter;
 		ReplaceArg(counter, L"%1", ctx->currentSlide);
 		ReplaceArg(counter, L"%2", ctx->totalSlides);
-		if (colorChanged || ctx->shownCounter != counter) {
-			UpdateTextSource(ctx->counter_source, counter, ctx->colText, 28, false, 0);
-			ctx->shownCounter = counter;
-		}
 	}
+	ctx->counter.Set(counter, ctx->colText, ctx->Px(26), true);
 
 	std::shared_ptr<const ppt::SlideThumb> thumb = ctx->currentSlide > 0 ? info.nextThumb : nullptr;
 	if (thumb != ctx->nextThumb) {
@@ -352,75 +437,85 @@ static void presenter_render(void *data, gs_effect_t * /*effect*/)
 {
 	auto *ctx = static_cast<PresenterSource *>(data);
 
-	ctx->ComputeLayout();
 	DrawFilledRect(0, 0, (float)ctx->outWidth, (float)ctx->outHeight, ctx->colBg);
 
-	ctx->RenderCurrentSlide();
-	ctx->RenderNextSlide();
-	ctx->RenderNotes(ctx->layout.notes);
+	gs_texture_t *tex = nullptr;
+	if (!ctx->capture || !ctx->capture->AcquireFrame(tex))
+		tex = nullptr;
+
+	ctx->RenderSlide(ctx->layout.current, ctx->labelCurrent, tex, &ctx->statusCurrent);
+	ctx->RenderSlide(ctx->layout.next, ctx->labelNext, ctx->nextTex,
+			 ctx->currentSlide > 0 && ctx->nextSlide == 0 ? &ctx->statusNext : nullptr);
+	ctx->RenderNotes();
 	ctx->RenderControls();
 }
 
-void PresenterSource::RenderCurrentSlide()
+void PresenterSource::RenderCard(const LayoutRect &panel, const Text &label)
 {
-	auto &r = layout.current;
-	DrawFilledRect((float)r.x, (float)r.y, (float)r.cx, (float)r.cy, 0xFF000000);
+	if (panel.cx <= 0 || panel.cy <= 0)
+		return;
 
-	gs_texture_t *tex = nullptr;
-	if (!capture || !capture->AcquireFrame(tex))
-		tex = nullptr;
+	FillRect(panel, colPanel);
+	OutlineRect(panel, Px(1), Mix(colPanel, colText, 0.12f));
+
+	int header = Px(44);
+	label.Draw((float)(panel.x + Px(16)), (float)panel.y + (header - (int)label.Height()) * 0.5f);
+}
+
+void PresenterSource::RenderSlide(const LayoutRect &panel, const Text &label, gs_texture_t *tex, const Text *status)
+{
+	RenderCard(panel, label);
+
+	LayoutRect body = PanelBody(panel);
+	float aspect = slideAspect;
+	if (tex && gs_texture_get_width(tex) && gs_texture_get_height(tex))
+		aspect = (float)gs_texture_get_width(tex) / (float)gs_texture_get_height(tex);
+
+	LayoutRect well = FitRect(body, aspect);
+	FillRect(well, Mix(colBg, 0xFF000000, 0.45f));
 
 	if (tex) {
-		DrawTexture(tex, (float)r.x, (float)r.y, (float)r.cx, (float)r.cy);
-	} else {
-		DrawFilledRect((float)r.x + 10, (float)r.cy * 0.5f - 20, (float)r.cx - 20, 40, 0x44FFFFFF);
-	}
-
-	// Optional outline edge matching theme boundaries
-	DrawFilledRect((float)r.x, (float)r.y, (float)r.cx, 1, colBorder);
-	DrawFilledRect((float)r.x, (float)r.y, 1, (float)r.cy, colBorder);
-}
-
-void PresenterSource::RenderNextSlide()
-{
-	auto &r = layout.next;
-
-	DrawFilledRect((float)r.x, (float)r.y + 28, (float)r.cx, (float)r.cy - 28, colBg);
-
-	DrawFilledRect((float)r.x, (float)r.y, (float)r.cx, 1, colBorder);
-	DrawFilledRect((float)r.x, (float)r.y, 1, (float)r.cy, colBorder);
-
-	if (nextTex) {
-		DrawTexture(nextTex, (float)r.x + 4, (float)r.y + 32, (float)r.cx - 8, (float)r.cy - 36);
+		DrawTexture(tex, well);
+	} else if (status && well.cx > 0) {
+		status->Draw(well.x + (well.cx - (int)status->Width()) * 0.5f,
+			     well.y + (well.cy - (int)status->Height()) * 0.5f);
 	}
 }
 
-void PresenterSource::RenderNotes(LayoutRect area)
+void PresenterSource::RenderNotes()
 {
-	DrawFilledRect((float)area.x, (float)area.y, (float)area.cx, (float)area.cy, colPanel);
-	DrawFilledRect((float)area.x, (float)area.y, (float)area.cx, 2, colBorder);
-	DrawFilledRect((float)area.x, (float)area.y, 1, (float)area.cy, colBorder);
+	RenderCard(layout.notes, labelNotes);
 
-	if (notes_source) {
-		gs_matrix_push();
-		gs_matrix_translate3f((float)area.x + 20, (float)area.y + 20, 0.0f);
-		obs_source_video_render(notes_source);
-		gs_matrix_pop();
-	}
+	LayoutRect body = PanelBody(layout.notes);
+	if (body.cx > 0 && body.cy > 0)
+		notes.Draw((float)body.x, (float)body.y);
 }
 
 void PresenterSource::RenderControls()
 {
 	auto &r = layout.controls;
-	DrawFilledRect((float)r.x, (float)r.y, (float)r.cx, (float)r.cy, colPanel);
-	DrawFilledRect((float)r.x, (float)r.y, (float)r.cx, 2, colBorder);
+	if (r.cx <= 0 || r.cy <= 0)
+		return;
 
-	if (counter_source) {
-		gs_matrix_push();
-		gs_matrix_translate3f((float)r.x + 40, (float)r.y + (r.cy * 0.3f), 0.0f);
-		obs_source_video_render(counter_source);
-		gs_matrix_pop();
-	}
+	FillRect(r, colPanel);
+	OutlineRect(r, Px(1), Mix(colPanel, colText, 0.12f));
+
+	int pad = Px(20);
+	counter.Draw((float)(r.x + pad), r.y + (r.cy - (int)counter.Height()) * 0.5f);
+
+	if (currentSlide <= 0 || totalSlides <= 0)
+		return;
+
+	int barX = r.x + pad + (int)counter.Width() + pad;
+	int barW = r.x + r.cx - pad - barX;
+	int barH = Px(6);
+	int barY = r.y + (r.cy - barH) / 2;
+	if (barW <= 0)
+		return;
+
+	FillRect({barX, barY, barW, barH}, Mix(colPanel, colText, 0.15f));
+	int fillW = (int)((float)barW * std::min(currentSlide, totalSlides) / totalSlides + 0.5f);
+	FillRect({barX, barY, fillW, barH}, colAccent);
 }
 
 static bool theme_preset_changed(obs_properties_t *props, obs_property_t * /*p*/, obs_data_t *settings)
@@ -430,8 +525,8 @@ static bool theme_preset_changed(obs_properties_t *props, obs_property_t * /*p*/
 
 	obs_property_set_visible(obs_properties_get(props, "col_bg"), is_custom);
 	obs_property_set_visible(obs_properties_get(props, "col_panel"), is_custom);
-	obs_property_set_visible(obs_properties_get(props, "col_border"), is_custom);
 	obs_property_set_visible(obs_properties_get(props, "col_text"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "col_accent"), is_custom);
 	return true;
 }
 
@@ -456,6 +551,7 @@ static obs_properties_t *presenter_get_properties(void *)
 	obs_property_t *p_theme = obs_properties_add_list(props, "theme_preset",
 							  obs_module_text("PPT.PresenterSource.ThemePreset"),
 							  OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(p_theme, obs_module_text("PPT.PresenterSource.Theme.OBS"), "obs");
 	obs_property_list_add_string(p_theme, obs_module_text("PPT.PresenterSource.Theme.Yami"), "yami");
 	obs_property_list_add_string(p_theme, obs_module_text("PPT.PresenterSource.Theme.Acri"), "acri");
 	obs_property_list_add_string(p_theme, obs_module_text("PPT.PresenterSource.Theme.Rachni"), "rachni");
@@ -485,8 +581,8 @@ static obs_properties_t *presenter_get_properties(void *)
 
 	obs_properties_add_color(props, "col_bg", obs_module_text("PPT.PresenterSource.ColBg"));
 	obs_properties_add_color(props, "col_panel", obs_module_text("PPT.PresenterSource.ColPanel"));
-	obs_properties_add_color(props, "col_border", obs_module_text("PPT.PresenterSource.ColBorder"));
 	obs_properties_add_color(props, "col_text", obs_module_text("PPT.PresenterSource.ColText"));
+	obs_properties_add_color(props, "col_accent", obs_module_text("PPT.PresenterSource.ColAccent"));
 	return props;
 }
 
@@ -494,19 +590,28 @@ static void presenter_get_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_int(settings, "output_width", 1920);
 	obs_data_set_default_int(settings, "output_height", 1080);
-	obs_data_set_default_string(settings, "theme_preset", "yami");
+	obs_data_set_default_string(settings, "theme_preset", "obs");
 	obs_data_set_default_string(settings, "layout_preset", "classic");
 	obs_data_set_default_double(settings, "split_x", 0.65);
 	obs_data_set_default_double(settings, "split_y", 0.85);
 	// Custom colour defaults mirror Yami
-	obs_data_set_default_int(settings, "col_bg", 0x1A1A1A);
-	obs_data_set_default_int(settings, "col_panel", 0x2D2D2D);
-	obs_data_set_default_int(settings, "col_border", 0x3D3D3D);
-	obs_data_set_default_int(settings, "col_text", 0xE0E0E0);
+	obs_data_set_default_int(settings, "col_bg", 0x261F1D);
+	obs_data_set_default_int(settings, "col_panel", 0x332A27);
+	obs_data_set_default_int(settings, "col_text", 0xFEFEFE);
+	obs_data_set_default_int(settings, "col_accent", 0xB84C28);
 }
 
 void RegisterPresenterSource()
 {
+	g_strNoNotes = ModuleTextW("PPT.PresenterSource.NoNotes");
+	g_strCounter = ModuleTextW("PPT.PresenterSource.SlideCounter");
+	g_strNoSlideshow = ModuleTextW("PPT.PresenterSource.NoSlideshow");
+	g_strCurrentSlide = ModuleTextW("PPT.PresenterSource.CurrentSlide");
+	g_strNextSlide = ModuleTextW("PPT.PresenterSource.NextSlide");
+	g_strNotes = ModuleTextW("PPT.PresenterSource.Notes");
+	g_strWaiting = ModuleTextW("PPT.PresenterSource.Waiting");
+	g_strEndOfShow = ModuleTextW("PPT.PresenterSource.EndOfShow");
+
 	obs_source_info info = {};
 	info.id = "ppt_presenter_source";
 	info.type = OBS_SOURCE_TYPE_INPUT;

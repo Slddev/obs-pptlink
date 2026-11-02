@@ -38,7 +38,7 @@ struct PresenterLayout {
 	LayoutRect controls;
 };
 
-PresenterLayout ComputePresenterLayout(LayoutPreset preset, uint32_t width, uint32_t height, float splitX,
-				       float splitY);
+PresenterLayout ComputePresenterLayout(LayoutPreset preset, uint32_t width, uint32_t height, float splitX, float splitY,
+				       int barHeight);
 
 } // namespace sources

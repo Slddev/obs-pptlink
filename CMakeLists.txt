@@ -65,6 +65,8 @@ target_sources(
   ${CMAKE_PROJECT_NAME}
   PRIVATE
     src/plugin-main.cpp
+    src/theme-colors.cpp
+    src/theme-colors.h
     src/com-bridge/ppt-com-bridge.cpp
     src/com-bridge/ppt-com-bridge.h
     src/com-bridge/thumb-cache.cpp
