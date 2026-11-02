@@ -173,7 +173,7 @@ void SharedCapture::Tick(float seconds)
 			return;
 		}
 		m_session.ShouldAcceptFrame = [this]() {
-			return m_slideshowActive.load();
+			return m_slideshowActive.load() && !(m_bridge && m_bridge->IsHoldingFrames());
 		};
 		m_pollAccum = 0.5f;
 	}

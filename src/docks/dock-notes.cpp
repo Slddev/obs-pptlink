@@ -53,16 +53,6 @@ void NotesDock::buildUi()
 	vbox->addWidget(m_showRow);
 	connect(m_showPicker, &QComboBox::currentIndexChanged, this, &NotesDock::onShowSelected);
 
-	QLabel *hdr = new QLabel(obs_module_text("PPT.NotesDock.Title"), this);
-	{
-		QFont f = hdr->font();
-		f.setPointSize(8);
-		f.setLetterSpacing(QFont::AbsoluteSpacing, 1.5);
-		hdr->setFont(f);
-		hdr->setProperty("class", "text-muted");
-	}
-	vbox->addWidget(hdr);
-
 	m_notes = new QTextEdit(this);
 	m_notes->setReadOnly(true);
 	m_notes->setPlaceholderText(obs_module_text("PPT.NotesDock.NoNotes"));

@@ -94,6 +94,8 @@ public:
 	// Slide aspect ratio (width/height) read from PageSetup.
 	// Returns 16/9 until the bridge connects and reads a presentation.
 	float GetSlideAspect() const { return m_slideAspect.load(); }
+	// True while a slide change under a black/white screen may briefly show the slide
+	bool IsHoldingFrames() const { return GetTickCount64() < m_holdFramesUntil.load(); }
 
 	// -- Presentation picker (thread-safe) --
 	std::vector<ShowEntry> GetShows() const;
@@ -157,6 +159,7 @@ private:
 	mutable std::mutex m_mutex;
 	SlideInfo m_state;
 	std::atomic<bool> m_connected{false};
+	std::atomic<ULONGLONG> m_holdFramesUntil{0};
 
 	ULONGLONG m_firstFailureTick = 0;
 	int m_lastThumbSlide = -1;

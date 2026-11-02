@@ -289,6 +289,13 @@ bool ComBridge::RunCommands()
 		if (!m_pView)
 			break;
 
+		bool navigates = cmd.type == CmdType::Next || cmd.type == CmdType::Prev || cmd.type == CmdType::First ||
+				 cmd.type == CmdType::Last || cmd.type == CmdType::Goto;
+		int blankState = navigates ? DispGetInt(m_pView, L"State", ppSlideShowRunning) : ppSlideShowRunning;
+		bool blank = blankState == ppSlideShowBlackScreen || blankState == ppSlideShowWhiteScreen;
+		if (blank)
+			m_holdFramesUntil.store(GetTickCount64() + 5000);
+
 		switch (cmd.type) {
 		case CmdType::Next:
 			DispCall(m_pView, L"Next");
@@ -317,6 +324,13 @@ bool ComBridge::RunCommands()
 			break;
 		default:
 			break;
+		}
+
+		// PowerPoint leaves a black/white screen when the slide changes; captured frames are held until it has
+		// been restored and repainted
+		if (blank) {
+			DispPutInt(m_pView, L"State", blankState);
+			m_holdFramesUntil.store(GetTickCount64() + 200);
 		}
 	}
 	return !cmds.empty();
