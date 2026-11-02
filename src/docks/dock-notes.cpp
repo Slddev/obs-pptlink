@@ -42,7 +42,7 @@ void NotesDock::buildUi()
 		f.setPointSize(8);
 		f.setLetterSpacing(QFont::AbsoluteSpacing, 1.5);
 		hdr->setFont(f);
-		hdr->setStyleSheet("color: #888;");
+		hdr->setProperty("class", "text-muted");
 	}
 	vbox->addWidget(hdr);
 
@@ -51,11 +51,6 @@ void NotesDock::buildUi()
 	m_notes->setPlaceholderText(obs_module_text("PPT.NotesDock.NoNotes"));
 	m_notes->setMinimumHeight(60);
 	m_notes->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-	m_notes->setStyleSheet("QTextEdit {"
-			       "  background:#1e1e1e; color:#ccc;"
-			       "  border:1px solid #333; border-radius:3px;"
-			       "  font-size:11px; padding:4px;"
-			       "}");
 	vbox->addWidget(m_notes, 1);
 
 	QHBoxLayout *btnRow = new QHBoxLayout();
@@ -65,16 +60,6 @@ void NotesDock::buildUi()
 	m_btnNext = new QPushButton(obs_module_text("PPT.NotesDock.Next"), this);
 
 	m_btnNext->setDefault(true);
-	m_btnNext->setStyleSheet("QPushButton{background:#2d6a9f;color:#fff;border:none;"
-				 "border-radius:3px;padding:5px 16px;font-weight:bold;}"
-				 "QPushButton:hover{background:#3a7fbc;}"
-				 "QPushButton:pressed{background:#1d5a8f;}"
-				 "QPushButton:disabled{background:#333;color:#666;}");
-	m_btnPrev->setStyleSheet("QPushButton{background:#2a2a2a;color:#ccc;"
-				 "border:1px solid #444;border-radius:3px;padding:5px 16px;}"
-				 "QPushButton:hover{background:#383838;}"
-				 "QPushButton:pressed{background:#1c1c1c;}"
-				 "QPushButton:disabled{background:#222;color:#555;border-color:#333;}");
 
 	btnRow->addWidget(m_btnPrev);
 	btnRow->addWidget(m_btnNext);

@@ -65,7 +65,6 @@ void NextSlidePreviewLabel::paintEvent(QPaintEvent *e)
 		QPainter p(this);
 		p.fillRect(rect(), QColor(0, 0, 0));
 		p.setPen(QColor(80, 80, 80));
-		p.setFont(QFont("Arial", 10));
 		p.drawText(rect(), Qt::AlignCenter, obs_module_text("PPT.NextSlideDock.NoPreview"));
 		return;
 	}
@@ -99,7 +98,7 @@ void NextSlideDock::buildUi()
 		f.setPointSize(8);
 		f.setLetterSpacing(QFont::AbsoluteSpacing, 1.5);
 		upNext->setFont(f);
-		upNext->setStyleSheet("color: #888;");
+		upNext->setProperty("class", "text-muted");
 	}
 	vbox->addWidget(upNext);
 
@@ -110,14 +109,12 @@ void NextSlideDock::buildUi()
 
 	m_noSignal = new QLabel(obs_module_text("PPT.NextSlideDock.NoSignal"), this);
 	m_noSignal->setAlignment(Qt::AlignCenter);
-	m_noSignal->setStyleSheet("color:#888; background:#1a1a1a;"
-				  "border:1px solid #333; border-radius:4px; padding:8px;");
+	m_noSignal->setProperty("class", "frame-notice text-muted");
 	m_noSignal->setVisible(false);
 	vbox->addWidget(m_noSignal);
 
 	QFrame *div = new QFrame(this);
 	div->setFrameShape(QFrame::HLine);
-	div->setStyleSheet("color:#333;");
 	vbox->addWidget(div);
 
 	m_counter = new QLabel("—", this);
