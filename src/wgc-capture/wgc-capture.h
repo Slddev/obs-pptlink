@@ -111,7 +111,9 @@ private:
 	std::mutex m_frameMutex;
 };
 
-HWND FindSlideshowWindow(HWND pptHwnd = nullptr);
+HWND FindSlideshowWindow(HWND pptHwnd = nullptr, const wchar_t *titleContains = nullptr);
+// True for a visible fullscreen slideshow window or a PowerPoint frame window, the two kinds CaptureSession handles
+bool IsSlideshowWindow(HWND hwnd);
 RECT GetMdiClientCropRect(HWND pptFrameHwnd, HWND mdiClient);
 bool IsWGCSupported();
 

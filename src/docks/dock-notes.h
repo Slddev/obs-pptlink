@@ -25,6 +25,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QLabel>
 #include <QTextEdit>
 #include <QPushButton>
+#include <QComboBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 
@@ -41,11 +42,18 @@ public:
 private slots:
 	void onPrevClicked();
 	void onNextClicked();
+	void onShowSelected(int index);
 
 private:
 	void buildUi();
+	void updateShows(const ppt::SlideInfo &info);
 
 	ppt::ComBridge *m_bridge = nullptr;
+	QWidget *m_showRow = nullptr;
+	QComboBox *m_showPicker = nullptr;
+	std::vector<ppt::ShowEntry> m_shownShows;
+	std::wstring m_shownPreferred;
+	std::wstring m_shownCurrent;
 	QTextEdit *m_notes = nullptr;
 	QPushButton *m_btnPrev = nullptr;
 	QPushButton *m_btnNext = nullptr;

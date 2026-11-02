@@ -20,377 +20,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
-#include <oleauto.h>
+#include "ppt-events.h"
+#include "ppt-slides.h"
 #include <ocidl.h>
 
-namespace {
-
-HRESULT DispGetProp(IDispatch *pDisp, const wchar_t *name, VARIANT *pVar)
-{
-	if (!pDisp || !name || !pVar)
-		return E_POINTER;
-	VariantInit(pVar);
-
-	DISPID dispid;
-	BSTR bname = SysAllocString(name);
-	HRESULT hr = pDisp->GetIDsOfNames(IID_NULL, &bname, 1, LOCALE_USER_DEFAULT, &dispid);
-	SysFreeString(bname);
-	if (FAILED(hr))
-		return hr;
-
-	DISPPARAMS dp{};
-	return pDisp->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_PROPERTYGET, &dp, pVar, nullptr, nullptr);
-}
-
-HRESULT DispCall0(IDispatch *pDisp, const wchar_t *name, VARIANT *pResult = nullptr)
-{
-	if (!pDisp)
-		return E_POINTER;
-
-	DISPID dispid;
-	BSTR bname = SysAllocString(name);
-	HRESULT hr = pDisp->GetIDsOfNames(IID_NULL, &bname, 1, LOCALE_USER_DEFAULT, &dispid);
-	SysFreeString(bname);
-	if (FAILED(hr))
-		return hr;
-
-	DISPPARAMS dp{};
-	VARIANT result;
-	VariantInit(&result);
-	hr = pDisp->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &dp, pResult ? pResult : &result,
-			   nullptr, nullptr);
-	if (!pResult)
-		VariantClear(&result);
-	return hr;
-}
-
-HRESULT DispCall1Int(IDispatch *pDisp, const wchar_t *name, int val)
-{
-	if (!pDisp)
-		return E_POINTER;
-
-	DISPID dispid;
-	BSTR bname = SysAllocString(name);
-	HRESULT hr = pDisp->GetIDsOfNames(IID_NULL, &bname, 1, LOCALE_USER_DEFAULT, &dispid);
-	SysFreeString(bname);
-	if (FAILED(hr))
-		return hr;
-
-	VARIANT arg;
-	VariantInit(&arg);
-	arg.vt = VT_I4;
-	arg.lVal = val;
-
-	DISPPARAMS dp{};
-	dp.cArgs = 1;
-	dp.rgvarg = &arg;
-	return pDisp->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &dp, nullptr, nullptr, nullptr);
-}
-
-IDispatch *DispGetObj(IDispatch *pDisp, const wchar_t *name)
-{
-	VARIANT v;
-	VariantInit(&v);
-	if (FAILED(DispGetProp(pDisp, name, &v)))
-		return nullptr;
-	if (v.vt == VT_DISPATCH)
-		return v.pdispVal;
-	VariantClear(&v);
-	return nullptr;
-}
-
-int DispGetInt(IDispatch *pDisp, const wchar_t *name, int def = 0)
-{
-	VARIANT v;
-	VariantInit(&v);
-	if (FAILED(DispGetProp(pDisp, name, &v)))
-		return def;
-
-	HRESULT hr = VariantChangeType(&v, &v, 0, VT_I4);
-	int r = (SUCCEEDED(hr) && v.vt == VT_I4) ? v.lVal : def;
-	VariantClear(&v);
-	return r;
-}
-
-std::wstring DispGetStr(IDispatch *pDisp, const wchar_t *name)
-{
-	VARIANT v;
-	VariantInit(&v);
-	if (FAILED(DispGetProp(pDisp, name, &v)))
-		return {};
-
-	HRESULT hr = VariantChangeType(&v, &v, 0, VT_BSTR);
-	std::wstring r = (SUCCEEDED(hr) && v.vt == VT_BSTR && v.bstrVal) ? v.bstrVal : L"";
-	VariantClear(&v);
-	return r;
-}
-
-IDispatch *FindNextVisibleSlide(IDispatch *pSlides, int fromIndex, int total, int &outIndex)
-{
-	outIndex = 0;
-	if (!pSlides || fromIndex >= total)
-		return nullptr;
-
-	DISPID itemId;
-	BSTR bname = SysAllocString(L"Item");
-	HRESULT hr = pSlides->GetIDsOfNames(IID_NULL, &bname, 1, LOCALE_USER_DEFAULT, &itemId);
-	SysFreeString(bname);
-	if (FAILED(hr))
-		return nullptr;
-
-	for (int idx = fromIndex + 1; idx <= total; ++idx) {
-		VARIANT arg, res;
-		VariantInit(&arg);
-		VariantInit(&res);
-		arg.vt = VT_I4;
-		arg.lVal = idx;
-		DISPPARAMS dp{&arg, nullptr, 1, 0};
-		pSlides->Invoke(itemId, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &dp, &res, nullptr, nullptr);
-
-		if (res.vt != VT_DISPATCH || !res.pdispVal) {
-			VariantClear(&res);
-			continue;
-		}
-
-		IDispatch *pSlide = res.pdispVal;
-
-		bool hidden = false;
-		IDispatch *pTrans = DispGetObj(pSlide, L"SlideShowTransition");
-		if (pTrans) {
-			VARIANT vh;
-			VariantInit(&vh);
-			if (SUCCEEDED(DispGetProp(pTrans, L"Hidden", &vh))) {
-				if (vh.vt == VT_BOOL)
-					hidden = (vh.boolVal != VARIANT_FALSE);
-				else if (SUCCEEDED(VariantChangeType(&vh, &vh, 0, VT_BOOL)))
-					hidden = (vh.boolVal != VARIANT_FALSE);
-				VariantClear(&vh);
-			}
-			pTrans->Release();
-		}
-
-		if (!hidden) {
-			outIndex = idx;
-			return pSlide;
-		}
-
-		pSlide->Release();
-	}
-	return nullptr;
-}
-
-IDispatch *DispGetItem(IDispatch *pCollection, int index)
-{
-	DISPID dispid;
-	BSTR bname = SysAllocString(L"Item");
-	HRESULT hr = pCollection->GetIDsOfNames(IID_NULL, &bname, 1, LOCALE_USER_DEFAULT, &dispid);
-	SysFreeString(bname);
-	if (FAILED(hr))
-		return nullptr;
-
-	VARIANT arg, res;
-	VariantInit(&arg);
-	VariantInit(&res);
-	arg.vt = VT_I4;
-	arg.lVal = index;
-	DISPPARAMS dp{&arg, nullptr, 1, 0};
-	pCollection->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &dp, &res, nullptr, nullptr);
-	if (res.vt == VT_DISPATCH)
-		return res.pdispVal;
-	VariantClear(&res);
-	return nullptr;
-}
-
-bool GetAppEventInfo(IDispatch *pApp, IID &eventsIid, DISPID &slideChangedId, DISPID &showEndedId)
-{
-	CLSID clsid;
-	if (FAILED(CLSIDFromProgID(L"PowerPoint.Application", &clsid)))
-		return false;
-
-	ITypeInfo *pAppInfo = nullptr;
-	HRESULT hr = pApp->GetTypeInfo(0, LOCALE_USER_DEFAULT, &pAppInfo);
-	if (FAILED(hr)) {
-		obs_log(LOG_WARNING, "GetAppEventInfo: GetTypeInfo failed: 0x%08X", hr);
-		return false;
-	}
-
-	ITypeLib *pLib = nullptr;
-	UINT index = 0;
-	hr = pAppInfo->GetContainingTypeLib(&pLib, &index);
-	pAppInfo->Release();
-	if (FAILED(hr)) {
-		obs_log(LOG_WARNING, "GetAppEventInfo: GetContainingTypeLib failed: 0x%08X", hr);
-		return false;
-	}
-
-	ITypeInfo *pClassInfo = nullptr;
-	hr = pLib->GetTypeInfoOfGuid(clsid, &pClassInfo);
-	pLib->Release();
-	if (FAILED(hr)) {
-		obs_log(LOG_WARNING, "GetAppEventInfo: GetTypeInfoOfGuid failed: 0x%08X", hr);
-		return false;
-	}
-
-	ITypeInfo *pEventInfo = nullptr;
-	TYPEATTR *pClassAttr = nullptr;
-	if (SUCCEEDED(pClassInfo->GetTypeAttr(&pClassAttr))) {
-		for (UINT i = 0; i < pClassAttr->cImplTypes && !pEventInfo; ++i) {
-			INT flags = 0;
-			HREFTYPE ref = 0;
-			if (SUCCEEDED(pClassInfo->GetImplTypeFlags(i, &flags)) && (flags & IMPLTYPEFLAG_FDEFAULT) &&
-			    (flags & IMPLTYPEFLAG_FSOURCE) && SUCCEEDED(pClassInfo->GetRefTypeOfImplType(i, &ref)))
-				pClassInfo->GetRefTypeInfo(ref, &pEventInfo);
-		}
-		pClassInfo->ReleaseTypeAttr(pClassAttr);
-	}
-	pClassInfo->Release();
-	if (!pEventInfo) {
-		obs_log(LOG_WARNING, "GetAppEventInfo: no default source interface found");
-		return false;
-	}
-
-	bool haveSlideChanged = false;
-	bool haveShowEnded = false;
-	TYPEATTR *pEventAttr = nullptr;
-	if (SUCCEEDED(pEventInfo->GetTypeAttr(&pEventAttr))) {
-		eventsIid = pEventAttr->guid;
-
-		for (UINT i = 0; i < pEventAttr->cFuncs; ++i) {
-			FUNCDESC *pFunc = nullptr;
-			if (FAILED(pEventInfo->GetFuncDesc(i, &pFunc)))
-				continue;
-
-			BSTR name = nullptr;
-			if (SUCCEEDED(pEventInfo->GetDocumentation(pFunc->memid, &name, nullptr, nullptr, nullptr)) &&
-			    name) {
-				if (wcscmp(name, L"SlideShowNextSlide") == 0) {
-					slideChangedId = pFunc->memid;
-					haveSlideChanged = true;
-				} else if (wcscmp(name, L"SlideShowEnd") == 0) {
-					showEndedId = pFunc->memid;
-					haveShowEnded = true;
-				}
-				SysFreeString(name);
-			}
-			pEventInfo->ReleaseFuncDesc(pFunc);
-		}
-		pEventInfo->ReleaseTypeAttr(pEventAttr);
-	}
-	pEventInfo->Release();
-
-	if (!haveSlideChanged || !haveShowEnded)
-		obs_log(LOG_WARNING, "GetAppEventInfo: SlideShowNextSlide/SlideShowEnd not found in event interface");
-	return haveSlideChanged && haveShowEnded;
-}
-
-} // namespace
-
 namespace ppt {
-
-class AppEventSink : public IDispatch {
-public:
-	enum Event : unsigned { SlideChanged = 1, ShowEnded = 2 };
-
-	AppEventSink(const IID &eventsIid, DISPID slideChangedId, DISPID showEndedId)
-		: m_eventsIid(eventsIid),
-		  m_slideChangedId(slideChangedId),
-		  m_showEndedId(showEndedId)
-	{
-	}
-
-	bool HasPending() const { return m_pending != 0; }
-
-	unsigned TakePending()
-	{
-		unsigned pending = m_pending;
-		m_pending = 0;
-		return pending;
-	}
-
-	STDMETHODIMP QueryInterface(REFIID riid, void **ppv) override
-	{
-		if (!ppv)
-			return E_POINTER;
-		if (riid == IID_IUnknown || riid == IID_IDispatch || riid == m_eventsIid) {
-			*ppv = static_cast<IDispatch *>(this);
-			AddRef();
-			return S_OK;
-		}
-		*ppv = nullptr;
-		return E_NOINTERFACE;
-	}
-
-	STDMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&m_refs); }
-
-	STDMETHODIMP_(ULONG) Release() override
-	{
-		ULONG refs = InterlockedDecrement(&m_refs);
-		if (refs == 0)
-			delete this;
-		return refs;
-	}
-
-	STDMETHODIMP GetTypeInfoCount(UINT *pctinfo) override
-	{
-		if (pctinfo)
-			*pctinfo = 0;
-		return S_OK;
-	}
-
-	STDMETHODIMP GetTypeInfo(UINT, LCID, ITypeInfo **) override { return E_NOTIMPL; }
-
-	STDMETHODIMP GetIDsOfNames(REFIID, LPOLESTR *, UINT, LCID, DISPID *) override { return E_NOTIMPL; }
-
-	STDMETHODIMP Invoke(DISPID dispIdMember, REFIID, LCID, WORD, DISPPARAMS *, VARIANT *, EXCEPINFO *,
-			    UINT *) override
-	{
-		if (dispIdMember == m_slideChangedId)
-			m_pending |= SlideChanged;
-		else if (dispIdMember == m_showEndedId)
-			m_pending |= ShowEnded;
-		return S_OK;
-	}
-
-private:
-	IID m_eventsIid;
-	DISPID m_slideChangedId;
-	DISPID m_showEndedId;
-	unsigned m_pending = 0;
-	ULONG m_refs = 1;
-};
-
-class BusyRetryFilter : public IMessageFilter {
-public:
-	STDMETHODIMP QueryInterface(REFIID riid, void **ppv) override
-	{
-		if (!ppv)
-			return E_POINTER;
-		if (riid == IID_IUnknown || riid == IID_IMessageFilter) {
-			*ppv = static_cast<IMessageFilter *>(this);
-			return S_OK;
-		}
-		*ppv = nullptr;
-		return E_NOINTERFACE;
-	}
-
-	STDMETHODIMP_(ULONG) AddRef() override { return 1; }
-
-	STDMETHODIMP_(ULONG) Release() override { return 1; }
-
-	STDMETHODIMP_(DWORD) HandleInComingCall(DWORD, HTASK, DWORD, LPINTERFACEINFO) override
-	{
-		return SERVERCALL_ISHANDLED;
-	}
-
-	STDMETHODIMP_(DWORD) RetryRejectedCall(HTASK, DWORD dwTickCount, DWORD dwRejectType) override
-	{
-		if (dwRejectType == SERVERCALL_RETRYLATER && dwTickCount < 5000)
-			return 100;
-		return static_cast<DWORD>(-1);
-	}
-
-	STDMETHODIMP_(DWORD) MessagePending(HTASK, DWORD, DWORD) override { return PENDINGMSG_WAITDEFPROCESS; }
-};
 
 ComBridge::ComBridge()
 {
@@ -432,6 +66,36 @@ HWND ComBridge::GetSlideshowHwnd() const
 {
 	std::lock_guard<std::mutex> lk(m_mutex);
 	return m_state.slideshowHwnd;
+}
+
+std::vector<ShowEntry> ComBridge::GetShows() const
+{
+	std::lock_guard<std::mutex> lk(m_mutex);
+	return m_shows;
+}
+
+std::wstring ComBridge::GetPreferredShow() const
+{
+	std::lock_guard<std::mutex> lk(m_mutex);
+	return m_preferredShow;
+}
+
+bool ComBridge::HasPreferredShow() const
+{
+	std::lock_guard<std::mutex> lk(m_mutex);
+	return !m_preferredShow.empty();
+}
+
+void ComBridge::SetPreferredShow(const std::wstring &fullName)
+{
+	{
+		std::lock_guard<std::mutex> lk(m_mutex);
+		if (m_preferredShow == fullName)
+			return;
+		m_preferredShow = fullName;
+	}
+	m_preferenceChanged.store(true);
+	SetEvent(m_wakeEvent);
 }
 
 void ComBridge::PostCommand(Command cmd)
@@ -499,14 +163,29 @@ void ComBridge::ThreadProc()
 
 		RunCommands();
 
+		if (m_preferenceChanged.exchange(false)) {
+			std::wstring want = GetPreferredShow();
+			if (!want.empty() && want != m_currentShow) {
+				Disconnect();
+				continue;
+			}
+		}
+
 		unsigned events = m_pSink ? m_pSink->TakePending() : 0;
 		if (events & AppEventSink::ShowEnded) {
-			Disconnect();
-			PumpFor(1000);
-			continue;
+			if (m_pSink->TakeEnded(m_pPresUnk)) {
+				Disconnect();
+				PumpFor(1000);
+				continue;
+			}
+			m_lastShowsTick = 0;
 		}
 
 		ULONGLONG now = GetTickCount64();
+		if (now - m_lastShowsTick >= 2000) {
+			m_lastShowsTick = now;
+			RefreshShows();
+		}
 		if ((events & AppEventSink::SlideChanged) || now - m_lastPollTick >= pollInterval) {
 			m_lastPollTick = now;
 			PollState();
@@ -557,6 +236,25 @@ void ComBridge::ExportPrefetch()
 	m_thumbs.Prefetch(index);
 }
 
+void ComBridge::UpdateNextThumb(IDispatch *pSlides, IDispatch *pNext, int cur, int nextSlide, int total)
+{
+	m_nextThumb = pNext && m_thumbs.Export(pNext, nextSlide, m_slideAspect.load()) ? m_thumbs.Load(nextSlide)
+										       : nullptr;
+	if (pNext && !m_nextThumb)
+		return;
+
+	m_lastThumbSlide = cur;
+
+	int afterNext = 0;
+	if (pNext) {
+		IDispatch *pAfter = FindNextVisibleSlide(pSlides, nextSlide, total, afterNext);
+		if (pAfter)
+			pAfter->Release();
+	}
+	m_prefetchSlide = afterNext;
+	m_prefetchDue = GetTickCount64() + 500;
+}
+
 void ComBridge::RunCommands()
 {
 	std::deque<Command> cmds;
@@ -571,16 +269,16 @@ void ComBridge::RunCommands()
 
 		switch (cmd.type) {
 		case CmdType::Next:
-			DispCall0(m_pView, L"Next");
+			DispCall(m_pView, L"Next");
 			break;
 		case CmdType::Prev:
-			DispCall0(m_pView, L"Previous");
+			DispCall(m_pView, L"Previous");
 			break;
 		case CmdType::Goto:
-			DispCall1Int(m_pView, L"GotoSlide", cmd.gotoIndex);
+			DispCallInt(m_pView, L"GotoSlide", cmd.gotoIndex);
 			break;
 		case CmdType::End:
-			DispCall0(m_pView, L"Exit");
+			DispCall(m_pView, L"Exit");
 			break;
 		default:
 			break;
@@ -661,6 +359,44 @@ void ComBridge::UnadviseEvents()
 	}
 }
 
+int ComBridge::ScanShows(IDispatch *pShows, const std::wstring &want)
+{
+	std::vector<ShowEntry> shows;
+	int count = DispGetInt(pShows, L"Count");
+	int pick = 0;
+	for (int i = 1; i <= count; ++i) {
+		IDispatch *pWnd = DispGetItem(pShows, i);
+		if (!pWnd)
+			continue;
+		ShowEntry entry;
+		IDispatch *pPres = DispGetObj(pWnd, L"Presentation");
+		if (pPres) {
+			entry.name = DispGetStr(pPres, L"Name");
+			entry.fullName = DispGetStr(pPres, L"FullName");
+			pPres->Release();
+		}
+		pWnd->Release();
+
+		if (want.empty() ? (!pick || (!m_lastShow.empty() && entry.fullName == m_lastShow))
+				 : entry.fullName == want)
+			pick = i;
+		shows.push_back(std::move(entry));
+	}
+
+	std::lock_guard<std::mutex> lk(m_mutex);
+	m_shows = std::move(shows);
+	return pick;
+}
+
+void ComBridge::RefreshShows()
+{
+	IDispatch *pShows = m_pApp ? DispGetObj(m_pApp, L"SlideShowWindows") : nullptr;
+	if (!pShows)
+		return;
+	ScanShows(pShows, {});
+	pShows->Release();
+}
+
 bool ComBridge::TryConnect()
 {
 	IUnknown *pUnk = nullptr;
@@ -669,8 +405,11 @@ bool ComBridge::TryConnect()
 		return false;
 
 	HRESULT hr = GetActiveObject(clsid, nullptr, &pUnk);
-	if (FAILED(hr) || !pUnk)
+	if (FAILED(hr) || !pUnk) {
+		std::lock_guard<std::mutex> lk(m_mutex);
+		m_shows.clear();
 		return false;
+	}
 
 	hr = pUnk->QueryInterface(IID_IDispatch, reinterpret_cast<void **>(&m_pApp));
 	pUnk->Release();
@@ -683,35 +422,13 @@ bool ComBridge::TryConnect()
 		return false;
 	}
 
-	int count = DispGetInt(pShows, L"Count");
-	if (count < 1) {
-		pShows->Release();
+	m_preferenceChanged.store(false);
+	int index = ScanShows(pShows, GetPreferredShow());
+	m_pShow = index > 0 ? DispGetItem(pShows, index) : nullptr;
+	pShows->Release();
+	if (!m_pShow) {
 		Disconnect();
 		return false;
-	}
-
-	{
-		DISPID dispid;
-		BSTR bname = SysAllocString(L"Item");
-		pShows->GetIDsOfNames(IID_NULL, &bname, 1, LOCALE_USER_DEFAULT, &dispid);
-		SysFreeString(bname);
-
-		VARIANT arg, result;
-		VariantInit(&arg);
-		VariantInit(&result);
-		arg.vt = VT_I4;
-		arg.lVal = 1;
-		DISPPARAMS dp{&arg, nullptr, 1, 0};
-		pShows->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &dp, &result, nullptr, nullptr);
-		pShows->Release();
-
-		if (result.vt == VT_DISPATCH)
-			m_pShow = result.pdispVal;
-		else {
-			VariantClear(&result);
-			Disconnect();
-			return false;
-		}
 	}
 
 	m_pView = DispGetObj(m_pShow, L"View");
@@ -719,6 +436,16 @@ bool ComBridge::TryConnect()
 		Disconnect();
 		return false;
 	}
+
+	IDispatch *pPres = DispGetObj(m_pShow, L"Presentation");
+	if (pPres) {
+		m_currentShow = DispGetStr(pPres, L"FullName");
+		m_currentShowName = DispGetStr(pPres, L"Name");
+		pPres->QueryInterface(IID_IUnknown, reinterpret_cast<void **>(&m_pPresUnk));
+		pPres->Release();
+	}
+	m_lastShow = m_currentShow;
+	m_lastShowsTick = GetTickCount64();
 
 	m_connected.store(true);
 	m_firstFailureTick = 0;
@@ -749,6 +476,12 @@ void ComBridge::Disconnect()
 		m_pApp->Release();
 		m_pApp = nullptr;
 	}
+	if (m_pPresUnk) {
+		m_pPresUnk->Release();
+		m_pPresUnk = nullptr;
+	}
+	m_currentShow.clear();
+	m_currentShowName.clear();
 	bool wasConnected = m_connected.exchange(false);
 	{
 		std::lock_guard<std::mutex> lk(m_cmdMutex);
@@ -780,23 +513,15 @@ void ComBridge::PollState()
 		return;
 	}
 
-	VARIANT v;
-	VariantInit(&v);
-	HRESULT hr = DispGetProp(m_pView, L"CurrentShowPosition", &v);
-	int cur = -1;
-	if (SUCCEEDED(hr)) {
-		if (SUCCEEDED(VariantChangeType(&v, &v, 0, VT_I4)) && v.vt == VT_I4)
-			cur = v.lVal;
-		VariantClear(&v);
-	}
+	int cur = DispGetInt(m_pView, L"CurrentShowPosition", -1);
 
 	if (cur < 0) {
 		ULONGLONG now = GetTickCount64();
 		if (!m_firstFailureTick)
 			m_firstFailureTick = now;
 		if (now - m_firstFailureTick >= 2000) {
-			obs_log(LOG_INFO, "PollState: CurrentShowPosition failing since %llu ms (0x%08X)",
-				now - m_firstFailureTick, hr);
+			obs_log(LOG_INFO, "PollState: CurrentShowPosition failing since %llu ms",
+				now - m_firstFailureTick);
 			Disconnect();
 		}
 		return;
@@ -807,102 +532,33 @@ void ComBridge::PollState()
 		return;
 
 	int total = 0;
-	HWND showHwnd = nullptr;
 	int nextSlide = 0;
 	std::wstring notes;
 
 	IDispatch *pPres = DispGetObj(m_pShow, L"Presentation");
 	if (pPres) {
-		IDispatch *pPS = DispGetObj(pPres, L"PageSetup");
-		if (pPS) {
-			VARIANT vs;
-			VariantInit(&vs);
-			double sw = 0, sh = 0;
-			if (SUCCEEDED(DispGetProp(pPS, L"SlideWidth", &vs))) {
-				if (SUCCEEDED(VariantChangeType(&vs, &vs, 0, VT_R8)))
-					sw = vs.dblVal;
-				VariantClear(&vs);
-			}
-			if (SUCCEEDED(DispGetProp(pPS, L"SlideHeight", &vs))) {
-				if (SUCCEEDED(VariantChangeType(&vs, &vs, 0, VT_R8)))
-					sh = vs.dblVal;
-				VariantClear(&vs);
-			}
-			if (sw > 0 && sh > 0)
-				m_slideAspect.store(static_cast<float>(sw / sh));
-			pPS->Release();
-		}
+		float aspect = ReadSlideAspect(pPres);
+		if (aspect > 0)
+			m_slideAspect.store(aspect);
 
 		IDispatch *pSlides = DispGetObj(pPres, L"Slides");
 		if (pSlides) {
 			total = DispGetInt(pSlides, L"Count");
 
-			auto getSlide = [&](int idx) -> IDispatch * {
-				DISPID dispid;
-				BSTR bname = SysAllocString(L"Item");
-				if (FAILED(pSlides->GetIDsOfNames(IID_NULL, &bname, 1, LOCALE_USER_DEFAULT, &dispid))) {
-					SysFreeString(bname);
-					return nullptr;
-				}
-				SysFreeString(bname);
-				VARIANT arg, res;
-				VariantInit(&arg);
-				VariantInit(&res);
-				arg.vt = VT_I4;
-				arg.lVal = idx;
-				DISPPARAMS dp{&arg, nullptr, 1, 0};
-				pSlides->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &dp, &res,
-						nullptr, nullptr);
-				return (res.vt == VT_DISPATCH) ? res.pdispVal : nullptr;
-			};
-
-			IDispatch *pSlide = getSlide(cur);
+			IDispatch *pSlide = DispGetItem(pSlides, cur);
 			if (pSlide) {
 				notes = GetNotesText(pSlide);
 				pSlide->Release();
 			}
 
 			IDispatch *pNext = FindNextVisibleSlide(pSlides, cur, total, nextSlide);
-
-			if (cur != m_lastThumbSlide) {
-				m_nextThumb = pNext && m_thumbs.Export(pNext, nextSlide, m_slideAspect.load())
-						      ? m_thumbs.Load(nextSlide)
-						      : nullptr;
-				if (!pNext || m_nextThumb) {
-					m_lastThumbSlide = cur;
-
-					int afterNext = 0;
-					if (pNext) {
-						IDispatch *pAfter =
-							FindNextVisibleSlide(pSlides, nextSlide, total, afterNext);
-						if (pAfter)
-							pAfter->Release();
-					}
-					m_prefetchSlide = afterNext;
-					m_prefetchDue = GetTickCount64() + 500;
-				}
-			}
-
+			if (cur != m_lastThumbSlide)
+				UpdateNextThumb(pSlides, pNext, cur, nextSlide, total);
 			if (pNext)
 				pNext->Release();
 			pSlides->Release();
 		}
 		pPres->Release();
-	}
-
-	{
-		VARIANT vh;
-		VariantInit(&vh);
-		if (SUCCEEDED(DispGetProp(m_pShow, L"HWND", &vh))) {
-			if (vh.vt == VT_I8) {
-				showHwnd = reinterpret_cast<HWND>(static_cast<uintptr_t>(vh.llVal));
-			} else if (vh.vt == VT_I4) {
-				showHwnd = reinterpret_cast<HWND>(static_cast<uintptr_t>(vh.lVal));
-			} else if (SUCCEEDED(VariantChangeType(&vh, &vh, 0, VT_I8)) && vh.vt == VT_I8) {
-				showHwnd = reinterpret_cast<HWND>(static_cast<uintptr_t>(vh.llVal));
-			}
-			VariantClear(&vh);
-		}
 	}
 
 	SlideInfo info;
@@ -911,86 +567,14 @@ void ComBridge::PollState()
 	info.nextSlide = nextSlide;
 	info.notes = notes;
 	info.nextThumb = m_nextThumb;
-	info.slideshowHwnd = showHwnd;
+	info.slideshowHwnd = GetShowHwnd(m_pShow);
 	info.slideshowActive = true;
+	info.presentation = m_currentShowName;
 
 	{
 		std::lock_guard<std::mutex> lk(m_mutex);
 		m_state = info;
 	}
-}
-
-std::wstring ComBridge::GetNotesText(IDispatch *pSlide)
-{
-	if (!pSlide)
-		return {};
-
-	constexpr int ppPlaceholderBody = 2;
-
-	IDispatch *pNP = DispGetObj(pSlide, L"NotesPage");
-	if (!pNP)
-		return {};
-	IDispatch *pSh = DispGetObj(pNP, L"Shapes");
-	pNP->Release();
-	if (!pSh)
-		return {};
-	IDispatch *pPh = DispGetObj(pSh, L"Placeholders");
-	pSh->Release();
-	if (!pPh)
-		return {};
-
-	DISPID did;
-	BSTR bn = SysAllocString(L"Item");
-	HRESULT hr = pPh->GetIDsOfNames(IID_NULL, &bn, 1, LOCALE_USER_DEFAULT, &did);
-	SysFreeString(bn);
-	if (FAILED(hr)) {
-		pPh->Release();
-		return {};
-	}
-
-	IDispatch *pBody = nullptr;
-	int count = DispGetInt(pPh, L"Count");
-	for (int i = 1; i <= count && !pBody; ++i) {
-		VARIANT a, r;
-		VariantInit(&a);
-		VariantInit(&r);
-		a.vt = VT_I4;
-		a.lVal = i;
-		DISPPARAMS d{&a, nullptr, 1, 0};
-		pPh->Invoke(did, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &d, &r, nullptr, nullptr);
-		if (r.vt != VT_DISPATCH || !r.pdispVal) {
-			VariantClear(&r);
-			continue;
-		}
-
-		IDispatch *pShape = r.pdispVal;
-		IDispatch *pFmt = DispGetObj(pShape, L"PlaceholderFormat");
-		if (pFmt) {
-			if (DispGetInt(pFmt, L"Type", -1) == ppPlaceholderBody)
-				pBody = pShape;
-			pFmt->Release();
-		}
-		if (pBody != pShape)
-			pShape->Release();
-	}
-	pPh->Release();
-
-	if (!pBody)
-		return {};
-
-	IDispatch *pTF = DispGetObj(pBody, L"TextFrame");
-	pBody->Release();
-	if (!pTF)
-		return {};
-
-	IDispatch *pTR = DispGetObj(pTF, L"TextRange");
-	pTF->Release();
-	if (!pTR)
-		return {};
-
-	std::wstring text = DispGetStr(pTR, L"Text");
-	pTR->Release();
-	return text;
 }
 
 } // namespace ppt

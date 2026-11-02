@@ -21,6 +21,20 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace wgc {
 
+// The bridge reports SlideShowWindow.HWND, which can be a child of the window that can be captured
+static HWND CapturableWindow(HWND hwnd)
+{
+	HWND root = hwnd ? GetAncestor(hwnd, GA_ROOT) : nullptr;
+	return IsSlideshowWindow(root) ? root : nullptr;
+}
+
+// Window titles show the presentation name, with or without its extension
+static std::wstring TitleStem(const std::wstring &name)
+{
+	size_t dot = name.find_last_of(L'.');
+	return dot == std::wstring::npos || dot == 0 ? name : name.substr(0, dot);
+}
+
 SharedCapture::SharedCapture(ppt::ComBridge *bridge) : m_bridge(bridge) {}
 
 SharedCapture::~SharedCapture()
@@ -120,18 +134,25 @@ void SharedCapture::Tick(float seconds)
 	if (connected)
 		m_session.SetSlideAspect(m_bridge->GetSlideAspect());
 
-	HWND hwnd = connected ? m_bridge->GetSlideshowHwnd() : nullptr;
+	HWND hwnd = connected ? CapturableWindow(m_bridge->GetSlideshowHwnd()) : nullptr;
 	if (!hwnd) {
-		m_pollAccum += seconds;
-		if (m_pollAccum < 0.5f)
-			return;
-		m_pollAccum = 0.0f;
-		hwnd = FindSlideshowWindow(nullptr);
+		bool picked = m_bridge && m_bridge->HasPreferredShow();
+		std::wstring title = picked && connected ? TitleStem(m_bridge->GetSlideInfo().presentation) : L"";
+		if (!picked || !title.empty()) {
+			m_pollAccum += seconds;
+			if (m_pollAccum < 0.5f)
+				return;
+			m_pollAccum = 0.0f;
+			hwnd = FindSlideshowWindow(nullptr, title.empty() ? nullptr : title.c_str());
+		}
 	}
 
 	if (hwnd != m_lastHwnd) {
 		m_lastHwnd = hwnd;
 		if (hwnd) {
+			wchar_t cls[64] = {};
+			GetClassNameW(hwnd, cls, 64);
+			obs_log(LOG_INFO, "SharedCapture: capturing %ls window %p", cls, hwnd);
 			m_slideshowActive.store(true);
 			m_session.StartCapture(hwnd);
 		} else {

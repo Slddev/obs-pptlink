@@ -9,6 +9,8 @@ target_sources(
     test-thumb.cpp
     ${CMAKE_SOURCE_DIR}/src/sources/presenter-layout.cpp
     ${CMAKE_SOURCE_DIR}/src/sources/presenter-layout.h
+    ${CMAKE_SOURCE_DIR}/src/com-bridge/com-dispatch.cpp
+    ${CMAKE_SOURCE_DIR}/src/com-bridge/com-dispatch.h
     ${CMAKE_SOURCE_DIR}/src/com-bridge/thumb-cache.cpp
     ${CMAKE_SOURCE_DIR}/src/com-bridge/thumb-cache.h
 )

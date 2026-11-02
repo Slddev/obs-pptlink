@@ -19,6 +19,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "dock-notes.h"
 #include <obs-module.h>
 #include <util/platform.h>
+#include <QSignalBlocker>
+#include <algorithm>
 
 namespace dock {
 
@@ -35,6 +37,18 @@ void NotesDock::buildUi()
 	QVBoxLayout *vbox = new QVBoxLayout(this);
 	vbox->setContentsMargins(6, 6, 6, 6);
 	vbox->setSpacing(6);
+
+	m_showRow = new QWidget(this);
+	QHBoxLayout *showLayout = new QHBoxLayout(m_showRow);
+	showLayout->setContentsMargins(0, 0, 0, 0);
+	showLayout->setSpacing(6);
+	showLayout->addWidget(new QLabel(obs_module_text("PPT.NotesDock.Presentation"), m_showRow));
+	m_showPicker = new QComboBox(m_showRow);
+	m_showPicker->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+	showLayout->addWidget(m_showPicker, 1);
+	m_showRow->setVisible(false);
+	vbox->addWidget(m_showRow);
+	connect(m_showPicker, &QComboBox::currentIndexChanged, this, &NotesDock::onShowSelected);
 
 	QLabel *hdr = new QLabel(obs_module_text("PPT.NotesDock.Title"), this);
 	{
@@ -71,6 +85,8 @@ void NotesDock::buildUi()
 
 void NotesDock::updateFromInfo(const ppt::SlideInfo &info, bool connected)
 {
+	updateShows(info);
+
 	m_btnPrev->setEnabled(connected);
 	m_btnNext->setEnabled(connected);
 	m_notes->setEnabled(connected);
@@ -95,6 +111,57 @@ void NotesDock::updateFromInfo(const ppt::SlideInfo &info, bool connected)
 		text = QString::fromUtf8(utf8.c_str());
 	}
 	m_notes->setPlainText(text);
+}
+
+void NotesDock::updateShows(const ppt::SlideInfo &info)
+{
+	if (!m_bridge)
+		return;
+
+	std::vector<ppt::ShowEntry> shows = m_bridge->GetShows();
+	std::wstring preferred = m_bridge->GetPreferredShow();
+	if (shows == m_shownShows && preferred == m_shownPreferred && info.presentation == m_shownCurrent)
+		return;
+	m_shownShows = shows;
+	m_shownPreferred = preferred;
+	m_shownCurrent = info.presentation;
+
+	QSignalBlocker block(m_showPicker);
+	m_showPicker->clear();
+
+	if (preferred.empty() && !info.presentation.empty())
+		m_showPicker->addItem(QString(obs_module_text("PPT.NotesDock.AutomaticCurrent"))
+					      .arg(QString::fromStdWString(info.presentation)),
+				      QString());
+	else
+		m_showPicker->addItem(obs_module_text("PPT.NotesDock.Automatic"), QString());
+
+	bool preferredRunning = preferred.empty();
+	for (const ppt::ShowEntry &show : shows) {
+		QString fullName = QString::fromStdWString(show.fullName);
+		m_showPicker->addItem(QString::fromStdWString(show.name), fullName);
+		m_showPicker->setItemData(m_showPicker->count() - 1, fullName, Qt::ToolTipRole);
+		if (show.fullName == preferred) {
+			m_showPicker->setCurrentIndex(m_showPicker->count() - 1);
+			preferredRunning = true;
+		}
+	}
+
+	if (!preferredRunning) {
+		QString fullName = QString::fromStdWString(preferred);
+		QString name = fullName.mid(std::max(fullName.lastIndexOf('\\'), fullName.lastIndexOf('/')) + 1);
+		m_showPicker->addItem(QString(obs_module_text("PPT.NotesDock.NotRunning")).arg(name), fullName);
+		m_showPicker->setItemData(m_showPicker->count() - 1, fullName, Qt::ToolTipRole);
+		m_showPicker->setCurrentIndex(m_showPicker->count() - 1);
+	}
+
+	m_showRow->setVisible(shows.size() > 1 || !preferred.empty());
+}
+
+void NotesDock::onShowSelected(int index)
+{
+	if (m_bridge && index >= 0)
+		m_bridge->SetPreferredShow(m_showPicker->itemData(index).toString().toStdWString());
 }
 
 void NotesDock::onPrevClicked()

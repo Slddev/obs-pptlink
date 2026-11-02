@@ -67,8 +67,14 @@ target_sources(
     src/plugin-main.cpp
     src/theme-colors.cpp
     src/theme-colors.h
+    src/com-bridge/com-dispatch.cpp
+    src/com-bridge/com-dispatch.h
     src/com-bridge/ppt-com-bridge.cpp
     src/com-bridge/ppt-com-bridge.h
+    src/com-bridge/ppt-events.cpp
+    src/com-bridge/ppt-events.h
+    src/com-bridge/ppt-slides.cpp
+    src/com-bridge/ppt-slides.h
     src/com-bridge/thumb-cache.cpp
     src/com-bridge/thumb-cache.h
     src/wgc-capture/wgc-capture.cpp

@@ -39,6 +39,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 // Forward-declare PowerPoint COM types rather than importing the full
 // typelib, so the header compiles without Office installed.
+struct IUnknown;
 struct IDispatch;
 struct IConnectionPoint;
 
@@ -57,6 +58,15 @@ struct SlideInfo {
 	std::shared_ptr<const SlideThumb> nextThumb;
 	HWND slideshowHwnd = nullptr;
 	bool slideshowActive = false;
+	std::wstring presentation; // name of the connected presentation
+};
+
+// A running slideshow, identified by its presentation's full path
+struct ShowEntry {
+	std::wstring name;
+	std::wstring fullName;
+
+	bool operator==(const ShowEntry &other) const { return name == other.name && fullName == other.fullName; }
 };
 
 // ------------------------------------------------------------------
@@ -83,6 +93,13 @@ public:
 	// Returns 16/9 until the bridge connects and reads a presentation.
 	float GetSlideAspect() const { return m_slideAspect.load(); }
 
+	// -- Presentation picker (thread-safe) --
+	std::vector<ShowEntry> GetShows() const;
+	std::wstring GetPreferredShow() const;
+	bool HasPreferredShow() const;
+	// Empty = automatic: stay on the current slideshow, otherwise the first one
+	void SetPreferredShow(const std::wstring &fullName);
+
 	// -- Control (posted to STA thread) --
 	void NextSlide();
 	void PrevSlide();
@@ -101,13 +118,15 @@ private:
 	bool TryConnect();
 	void Disconnect();
 	void PollState();
-	std::wstring GetNotesText(IDispatch *pSlide);
+	void UpdateNextThumb(IDispatch *pSlides, IDispatch *pNext, int cur, int nextSlide, int total);
 	bool AdviseEvents();
 	void UnadviseEvents();
 	void RunCommands();
 	void WaitForWork(DWORD timeoutMs);
 	void PumpFor(DWORD durationMs);
 	void ExportPrefetch();
+	int ScanShows(IDispatch *pShows, const std::wstring &want);
+	void RefreshShows();
 
 	// Command queue for cross-thread calls
 	enum class CmdType { None, Next, Prev, Goto, End };
@@ -137,6 +156,16 @@ private:
 	int m_prefetchSlide = 0;
 	ULONGLONG m_prefetchDue = 0;
 	ThumbCache m_thumbs;
+
+	// Presentation picker
+	std::vector<ShowEntry> m_shows; // protected by m_mutex
+	std::wstring m_preferredShow;   // protected by m_mutex
+	std::atomic<bool> m_preferenceChanged{false};
+	std::wstring m_currentShow;     // STA thread only
+	std::wstring m_currentShowName; // STA thread only
+	std::wstring m_lastShow;        // STA thread only
+	IUnknown *m_pPresUnk = nullptr; // STA thread only, identity of the connected presentation
+	ULONGLONG m_lastShowsTick = 0;
 	std::shared_ptr<const SlideThumb> m_nextThumb;
 	ULONGLONG m_lastPollTick = 0;
 

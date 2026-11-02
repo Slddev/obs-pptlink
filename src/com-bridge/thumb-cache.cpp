@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "thumb-cache.h"
+#include "com-dispatch.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -47,18 +48,9 @@ std::wstring GetSlideThumbPath(int slide)
 
 HRESULT DispCallExport(IDispatch *pSlide, const wchar_t *path, int width, int height)
 {
-	if (!pSlide)
-		return E_POINTER;
-	DISPID dispid;
-	BSTR bname = SysAllocString(L"Export");
-	HRESULT hr = pSlide->GetIDsOfNames(IID_NULL, &bname, 1, LOCALE_USER_DEFAULT, &dispid);
-	SysFreeString(bname);
-	if (FAILED(hr))
-		return hr;
-
 	VARIANT args[4];
-	for (int i = 0; i < 4; ++i)
-		VariantInit(&args[i]);
+	for (VARIANT &arg : args)
+		VariantInit(&arg);
 
 	args[0].vt = VT_I4;
 	args[0].lVal = height;
@@ -69,11 +61,7 @@ HRESULT DispCallExport(IDispatch *pSlide, const wchar_t *path, int width, int he
 	args[3].vt = VT_BSTR;
 	args[3].bstrVal = SysAllocString(path);
 
-	DISPPARAMS dp{};
-	dp.cArgs = 4;
-	dp.rgvarg = args;
-
-	hr = pSlide->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD, &dp, nullptr, nullptr, nullptr);
+	HRESULT hr = ppt::DispInvoke(pSlide, L"Export", DISPATCH_METHOD, args, 4, nullptr);
 
 	SysFreeString(args[2].bstrVal);
 	SysFreeString(args[3].bstrVal);

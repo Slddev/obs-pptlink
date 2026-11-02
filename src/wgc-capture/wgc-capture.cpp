@@ -455,6 +455,7 @@ bool CaptureSession::AcquireLatestFrame(gs_texture_t *&texture)
 struct FindSlideshowCtx {
 	HWND result = nullptr;
 	HWND pptHwnd = nullptr;
+	const wchar_t *titleContains = nullptr;
 };
 
 static BOOL CALLBACK FindSlideshowEnum(HWND hwnd, LPARAM lParam)
@@ -468,6 +469,9 @@ static BOOL CALLBACK FindSlideshowEnum(HWND hwnd, LPARAM lParam)
 
 	bool isPPT = wcscmp(cls, L"screenClass") == 0 || wcscmp(cls, L"PPTFrameClass") == 0;
 	if (!isPPT)
+		return TRUE;
+
+	if (ctx->titleContains && wcsstr(GetTitle(hwnd).c_str(), ctx->titleContains) == nullptr)
 		return TRUE;
 
 	if (ctx->pptHwnd) {
@@ -513,12 +517,22 @@ static BOOL CALLBACK FindSlideshowEnum(HWND hwnd, LPARAM lParam)
 	return TRUE;
 }
 
-HWND FindSlideshowWindow(HWND pptHwnd)
+HWND FindSlideshowWindow(HWND pptHwnd, const wchar_t *titleContains)
 {
 	FindSlideshowCtx ctx;
 	ctx.pptHwnd = pptHwnd;
+	ctx.titleContains = titleContains;
 	EnumWindows(FindSlideshowEnum, reinterpret_cast<LPARAM>(&ctx));
 	return ctx.result;
+}
+
+bool IsSlideshowWindow(HWND hwnd)
+{
+	if (!hwnd || !IsWindowVisible(hwnd))
+		return false;
+	wchar_t cls[256] = {};
+	GetClassNameW(hwnd, cls, 256);
+	return wcscmp(cls, L"screenClass") == 0 || wcscmp(cls, L"PPTFrameClass") == 0;
 }
 
 RECT GetMdiClientCropRect(HWND pptFrameHwnd, HWND mdiClient)
