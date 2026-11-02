@@ -10,7 +10,7 @@ Captures animations, transitions, and embedded video natively using Windows Grap
 | | Version |
 |---|---|
 | Windows | 10 1903 (build 18362) or later |
-| OBS Studio | 31.0 or later |
+| OBS Studio | 31.1.1 or later |
 | Microsoft PowerPoint | 2016 or later (Microsoft 365 recommended) |
 
 ---
@@ -31,7 +31,7 @@ Alternatively, download the `.zip` archive and extract it into `C:\ProgramData\o
 1. Open PowerPoint and start a slideshow (F5 or **Slide Show → From Beginning**).
 2. In OBS, **Add Source** and choose:
    - **PPTLink Slide** — live slideshow feed for your main scene, including animations, transitions, and embedded video.
-   - **PPTLink Presenter View** — full presenter layout with current slide, next slide preview, speaker notes, and slide counter.
+   - **PPTLink Presenter View** — full presenter layout with current slide, next slide preview, speaker notes, slide counter, and progress bar. It follows the OBS theme by default; fixed colour presets and custom colours are available in its properties.
 3. The plugin detects the slideshow window automatically within half a second. No manual configuration needed.
 
 ### Docks
@@ -41,7 +41,7 @@ Two docks are registered automatically under **View → Docks**:
 | Dock | Contents |
 |---|---|
 | PPTLink: Next Slide | Upcoming slide thumbnail + slide counter |
-| PPTLink: Notes & Controls | Next slide speaker notes + Prev/Next buttons |
+| PPTLink: Notes & Controls | Current slide speaker notes + Prev/Next buttons |
 
 ### Hotkeys
 
@@ -93,36 +93,51 @@ ctest --test-dir build_x64 -C RelWithDebInfo --output-on-failure
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  OBS Studio (render thread)                                      │
-│                                                                  │
-│  ┌──────────────────┐    ┌─────────────────────────────────┐    │
-│  │  PPTLink Slide   │    │  PPTLink Presenter View          │    │
-│  │  (source-slide)  │    │  (source-presenter)              │    │
-│  │  AcquireLatest   │    │  WGC + notes + counter overlay   │    │
-│  └────────┬─────────┘    └────────────────┬────────────────┘    │
-│           └──────────┬────────────────────┘                      │
-│                      ▼                                           │
-│           wgc::CaptureSession                                    │
-│           (gs_texture_t* via shared NT handle)                   │
-└──────────────────────┼──────────────────────────────────────────┘
-                       │ DX11 shared texture
-┌──────────────────────┼──────────────────────────────────────────┐
-│  WGC thread          ▼                                           │
-│  GraphicsCaptureSession → Direct3D11CaptureFramePool             │
-│    MDIClient crop removes title bar / ribbon / bottom bar        │
-│    ComputeLetterboxCrop strips black bars using slide aspect      │
-│  ID3D11Texture2D (BGRA) ← CopyResource each frame               │
-└──────────────────────────────────────────────────────────────────┘
-                       ▲
-                       │ HWND + slide info (polled every 100ms)
-┌──────────────────────┼──────────────────────────────────────────┐
-│  COM STA thread — ppt::ComBridge                                 │
-│    CurrentShowPosition, Notes, PageSetup aspect ratio            │
-│    SlideShowWindow.HWND                                          │
-│    View.Next() / Previous() / GotoSlide()                        │
-│    Slide(n+1).Export() → obs_ppt_next.png thumbnail              │
-└──────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│ COM STA thread -- ppt::ComBridge                                     │
+│                                                                      │
+│   EApplication events: SlideShowNextSlide, SlideShowEnd              │
+│     + state poll every 1 s (every 100 ms if events are unavailable)  │
+│   CurrentShowPosition, notes, PageSetup aspect, SlideShowWindow.HWND │
+│   View.Next() / Previous() / GotoSlide() from docks and hotkeys      │
+│                                                                      │
+│   ppt::ThumbCache                                                    │
+│     Slide.Export() -> %TEMP%\obs-pptlink-<pid>\slide_<n>.png         │
+│     decoded once with GDI+, shared via SlideInfo::nextThumb          │
+│     slide after next is exported and decoded ahead of time           │
+└──────────────────────────────────────────────────────────────────────┘
+                    │
+                    │ GetSlideInfo() -- HWND, slide numbers, notes, next thumbnail
+                    ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ OBS graphics thread                                                  │
+│                                                                      │
+│   PPTLink Slide (source-slide)                                       │
+│   PPTLink Presenter View (source-presenter)                          │
+│     live slide, next-slide thumbnail, notes, counter, progress       │
+│                                                                      │
+│   wgc::SharedCapture -- one capture shared by every source           │
+│     tick: picks up the slideshow HWND, starts/stops the session      │
+└──────────────────────────────────────────────────────────────────────┘
+                    ▲
+                    │ AcquireFrame() -- ID3D11Texture2D wrapped as gs_texture_t
+                    │
+┌──────────────────────────────────────────────────────────────────────┐
+│ WGC thread pool -- wgc::CaptureSession                               │
+│                                                                      │
+│   Direct3D11CaptureFramePool (free-threaded, OBS's D3D11 device)     │
+│   MDIClient crop removes title bar / ribbon / status bar             │
+│   ComputeLetterboxCrop strips black bars using the slide aspect      │
+│   CopySubresourceRegion into a BGRA texture under the graphics lock  │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ Qt UI thread                                                         │
+│                                                                      │
+│   Next Slide / Notes & Controls docks -- GetSlideInfo() every 200 ms │
+│   theme::Colors -- Qt palette of the active OBS theme, refreshed on  │
+│     theme change, read by the presenter view                         │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
