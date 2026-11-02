@@ -26,6 +26,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QTextEdit>
 #include <QPushButton>
 #include <QComboBox>
+#include <QSpinBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 
@@ -42,6 +43,7 @@ public:
 private slots:
 	void onPrevClicked();
 	void onNextClicked();
+	void onGotoClicked();
 	void onShowSelected(int index);
 
 private:
@@ -55,8 +57,15 @@ private:
 	std::wstring m_shownPreferred;
 	std::wstring m_shownCurrent;
 	QTextEdit *m_notes = nullptr;
+	QPushButton *m_btnFirst = nullptr;
 	QPushButton *m_btnPrev = nullptr;
 	QPushButton *m_btnNext = nullptr;
+	QPushButton *m_btnLast = nullptr;
+	QSpinBox *m_gotoSlide = nullptr;
+	QPushButton *m_btnGoto = nullptr;
+	QPushButton *m_btnBlack = nullptr;
+	QPushButton *m_btnWhite = nullptr;
+	int m_shownTotal = -1;
 	std::wstring m_lastNotes;
 };
 

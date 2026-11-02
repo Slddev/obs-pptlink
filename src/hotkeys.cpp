@@ -23,11 +23,42 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace hotkeys {
 
-static obs_hotkey_id g_first = OBS_INVALID_HOTKEY_ID;
-static obs_hotkey_id g_next = OBS_INVALID_HOTKEY_ID;
-static obs_hotkey_id g_prev = OBS_INVALID_HOTKEY_ID;
-static obs_hotkey_id g_last = OBS_INVALID_HOTKEY_ID;
 static ppt::ComBridge *g_br = nullptr;
+
+struct Hotkey {
+	const char *name;
+	const char *textKey;
+	const char *configKey;
+	void (*action)(ppt::ComBridge *bridge);
+	obs_hotkey_id id = OBS_INVALID_HOTKEY_ID;
+};
+
+static Hotkey g_hotkeys[] = {
+	{"ppt.global.first_slide", "PPT.Hotkey.FirstSlide", "ppt_first_slide",
+	 [](ppt::ComBridge *br) {
+		 br->FirstSlide();
+	 }},
+	{"ppt.global.next_slide", "PPT.Hotkey.NextSlide", "ppt_next_slide",
+	 [](ppt::ComBridge *br) {
+		 br->NextSlide();
+	 }},
+	{"ppt.global.prev_slide", "PPT.Hotkey.PrevSlide", "ppt_prev_slide",
+	 [](ppt::ComBridge *br) {
+		 br->PrevSlide();
+	 }},
+	{"ppt.global.last_slide", "PPT.Hotkey.LastSlide", "ppt_last_slide",
+	 [](ppt::ComBridge *br) {
+		 br->LastSlide();
+	 }},
+	{"ppt.global.black_screen", "PPT.Hotkey.BlackScreen", "ppt_black_screen",
+	 [](ppt::ComBridge *br) {
+		 br->ToggleBlackScreen();
+	 }},
+	{"ppt.global.white_screen", "PPT.Hotkey.WhiteScreen", "ppt_white_screen",
+	 [](ppt::ComBridge *br) {
+		 br->ToggleWhiteScreen();
+	 }},
+};
 
 static void SaveBindings()
 {
@@ -35,26 +66,16 @@ static void SaveBindings()
 	if (!cfg)
 		return;
 
-	struct {
-		obs_hotkey_id id;
-		const char *key;
-	} entries[] = {
-		{g_first, "ppt_first_slide"},
-		{g_next, "ppt_next_slide"},
-		{g_prev, "ppt_prev_slide"},
-		{g_last, "ppt_last_slide"},
-	};
-
-	for (auto &e : entries) {
-		if (e.id == OBS_INVALID_HOTKEY_ID)
+	for (const Hotkey &hk : g_hotkeys) {
+		if (hk.id == OBS_INVALID_HOTKEY_ID)
 			continue;
 
-		obs_data_array_t *arr = obs_hotkey_save(e.id);
+		obs_data_array_t *arr = obs_hotkey_save(hk.id);
 		obs_data_t *obj = obs_data_create();
 		obs_data_set_array(obj, "bindings", arr);
 		const char *json = obs_data_get_json(obj);
 
-		config_set_string(cfg, "Hotkeys", e.key, json ? json : "");
+		config_set_string(cfg, "Hotkeys", hk.configKey, json ? json : "");
 
 		obs_data_array_release(arr);
 		obs_data_release(obj);
@@ -69,21 +90,11 @@ static void LoadBindings()
 	if (!cfg)
 		return;
 
-	struct {
-		obs_hotkey_id *id;
-		const char *key;
-	} entries[] = {
-		{&g_first, "ppt_first_slide"},
-		{&g_next, "ppt_next_slide"},
-		{&g_prev, "ppt_prev_slide"},
-		{&g_last, "ppt_last_slide"},
-	};
-
-	for (auto &e : entries) {
-		if (*e.id == OBS_INVALID_HOTKEY_ID)
+	for (const Hotkey &hk : g_hotkeys) {
+		if (hk.id == OBS_INVALID_HOTKEY_ID)
 			continue;
 
-		const char *json = config_get_string(cfg, "Hotkeys", e.key);
+		const char *json = config_get_string(cfg, "Hotkeys", hk.configKey);
 		if (!json || !*json)
 			continue;
 
@@ -93,7 +104,7 @@ static void LoadBindings()
 
 		obs_data_array_t *arr = obs_data_get_array(obj, "bindings");
 		if (arr) {
-			obs_hotkey_load(*e.id, arr);
+			obs_hotkey_load(hk.id, arr);
 			obs_data_array_release(arr);
 		}
 		obs_data_release(obj);
@@ -106,41 +117,18 @@ static void OnFrontendEvent(enum obs_frontend_event event, void *)
 		SaveBindings();
 }
 
+static void OnHotkey(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
+{
+	if (pressed && g_br)
+		static_cast<Hotkey *>(data)->action(g_br);
+}
+
 void Register(ppt::ComBridge *bridge)
 {
 	g_br = bridge;
 
-	g_first = obs_hotkey_register_frontend(
-		"ppt.global.first_slide", obs_module_text("PPT.Hotkey.FirstSlide"),
-		[](void *, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
-			if (pressed && g_br)
-				g_br->GotoSlide(1);
-		},
-		nullptr);
-
-	g_next = obs_hotkey_register_frontend(
-		"ppt.global.next_slide", obs_module_text("PPT.Hotkey.NextSlide"),
-		[](void *, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
-			if (pressed && g_br)
-				g_br->NextSlide();
-		},
-		nullptr);
-
-	g_prev = obs_hotkey_register_frontend(
-		"ppt.global.prev_slide", obs_module_text("PPT.Hotkey.PrevSlide"),
-		[](void *, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
-			if (pressed && g_br)
-				g_br->PrevSlide();
-		},
-		nullptr);
-
-	g_last = obs_hotkey_register_frontend(
-		"ppt.global.last_slide", obs_module_text("PPT.Hotkey.LastSlide"),
-		[](void *, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
-			if (pressed && g_br)
-				g_br->GotoSlide(g_br->GetSlideInfo().totalSlides);
-		},
-		nullptr);
+	for (Hotkey &hk : g_hotkeys)
+		hk.id = obs_hotkey_register_frontend(hk.name, obs_module_text(hk.textKey), OnHotkey, &hk);
 
 	LoadBindings();
 	obs_frontend_add_event_callback(OnFrontendEvent, nullptr);
@@ -151,21 +139,11 @@ void Unregister()
 	obs_frontend_remove_event_callback(OnFrontendEvent, nullptr);
 	SaveBindings();
 
-	if (g_first != OBS_INVALID_HOTKEY_ID) {
-		obs_hotkey_unregister(g_first);
-		g_first = OBS_INVALID_HOTKEY_ID;
-	}
-	if (g_next != OBS_INVALID_HOTKEY_ID) {
-		obs_hotkey_unregister(g_next);
-		g_next = OBS_INVALID_HOTKEY_ID;
-	}
-	if (g_prev != OBS_INVALID_HOTKEY_ID) {
-		obs_hotkey_unregister(g_prev);
-		g_prev = OBS_INVALID_HOTKEY_ID;
-	}
-	if (g_last != OBS_INVALID_HOTKEY_ID) {
-		obs_hotkey_unregister(g_last);
-		g_last = OBS_INVALID_HOTKEY_ID;
+	for (Hotkey &hk : g_hotkeys) {
+		if (hk.id != OBS_INVALID_HOTKEY_ID) {
+			obs_hotkey_unregister(hk.id);
+			hk.id = OBS_INVALID_HOTKEY_ID;
+		}
 	}
 	g_br = nullptr;
 }

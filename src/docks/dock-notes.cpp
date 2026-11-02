@@ -70,26 +70,90 @@ void NotesDock::buildUi()
 	QHBoxLayout *btnRow = new QHBoxLayout();
 	btnRow->setSpacing(6);
 
+	m_btnFirst = new QPushButton(obs_module_text("PPT.NotesDock.First"), this);
 	m_btnPrev = new QPushButton(obs_module_text("PPT.NotesDock.Prev"), this);
 	m_btnNext = new QPushButton(obs_module_text("PPT.NotesDock.Next"), this);
+	m_btnLast = new QPushButton(obs_module_text("PPT.NotesDock.Last"), this);
 
 	m_btnNext->setDefault(true);
 
+	btnRow->addWidget(m_btnFirst);
 	btnRow->addWidget(m_btnPrev);
 	btnRow->addWidget(m_btnNext);
+	btnRow->addWidget(m_btnLast);
 	vbox->addLayout(btnRow);
 
+	QHBoxLayout *gotoRow = new QHBoxLayout();
+	gotoRow->setSpacing(6);
+
+	m_gotoSlide = new QSpinBox(this);
+	m_gotoSlide->setRange(1, 1);
+	m_gotoSlide->setPrefix(QString(obs_module_text("PPT.NotesDock.GoTo")) + " ");
+	m_btnGoto = new QPushButton(obs_module_text("PPT.NotesDock.Go"), this);
+
+	gotoRow->addWidget(m_gotoSlide, 1);
+	gotoRow->addWidget(m_btnGoto);
+	vbox->addLayout(gotoRow);
+
+	QHBoxLayout *screenRow = new QHBoxLayout();
+	screenRow->setSpacing(6);
+
+	m_btnBlack = new QPushButton(obs_module_text("PPT.NotesDock.Black"), this);
+	m_btnWhite = new QPushButton(obs_module_text("PPT.NotesDock.White"), this);
+	m_btnBlack->setCheckable(true);
+	m_btnWhite->setCheckable(true);
+
+	screenRow->addWidget(m_btnBlack);
+	screenRow->addWidget(m_btnWhite);
+	vbox->addLayout(screenRow);
+
+	connect(m_btnFirst, &QPushButton::clicked, this, [this]() {
+		if (m_bridge)
+			m_bridge->FirstSlide();
+	});
 	connect(m_btnPrev, &QPushButton::clicked, this, &NotesDock::onPrevClicked);
 	connect(m_btnNext, &QPushButton::clicked, this, &NotesDock::onNextClicked);
+	connect(m_btnLast, &QPushButton::clicked, this, [this]() {
+		if (m_bridge)
+			m_bridge->LastSlide();
+	});
+	connect(m_btnGoto, &QPushButton::clicked, this, &NotesDock::onGotoClicked);
+	connect(m_gotoSlide, &QSpinBox::editingFinished, this, [this]() {
+		if (m_gotoSlide->hasFocus())
+			onGotoClicked();
+	});
+	connect(m_btnBlack, &QPushButton::clicked, this, [this]() {
+		if (m_bridge)
+			m_bridge->ToggleBlackScreen();
+	});
+	connect(m_btnWhite, &QPushButton::clicked, this, [this]() {
+		if (m_bridge)
+			m_bridge->ToggleWhiteScreen();
+	});
 }
 
 void NotesDock::updateFromInfo(const ppt::SlideInfo &info, bool connected)
 {
 	updateShows(info);
 
-	m_btnPrev->setEnabled(connected);
-	m_btnNext->setEnabled(connected);
-	m_notes->setEnabled(connected);
+	for (QWidget *w : std::initializer_list<QWidget *>{m_btnFirst, m_btnPrev, m_btnNext, m_btnLast, m_gotoSlide,
+							   m_btnGoto, m_btnBlack, m_btnWhite, m_notes})
+		w->setEnabled(connected);
+
+	{
+		QSignalBlocker blockBlack(m_btnBlack);
+		QSignalBlocker blockWhite(m_btnWhite);
+		m_btnBlack->setChecked(connected && info.blackScreen);
+		m_btnWhite->setChecked(connected && info.whiteScreen);
+	}
+
+	if (connected && info.totalSlides != m_shownTotal) {
+		m_shownTotal = info.totalSlides;
+		m_gotoSlide->setRange(1, std::max(1, info.totalSlides));
+		m_gotoSlide->setSuffix(QString(" / %1").arg(info.totalSlides));
+	}
+	if (connected && info.currentSlide > 0 && !m_gotoSlide->hasFocus())
+		m_gotoSlide->setValue(info.currentSlide);
 
 	if (!connected) {
 		if (!m_lastNotes.empty()) {
@@ -162,6 +226,12 @@ void NotesDock::onShowSelected(int index)
 {
 	if (m_bridge && index >= 0)
 		m_bridge->SetPreferredShow(m_showPicker->itemData(index).toString().toStdWString());
+}
+
+void NotesDock::onGotoClicked()
+{
+	if (m_bridge)
+		m_bridge->GotoSlide(m_gotoSlide->value());
 }
 
 void NotesDock::onPrevClicked()

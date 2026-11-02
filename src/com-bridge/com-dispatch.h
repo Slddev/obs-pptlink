@@ -37,6 +37,7 @@ HRESULT DispInvoke(IDispatch *pDisp, const wchar_t *name, WORD flags, VARIANT *a
 HRESULT DispGetProp(IDispatch *pDisp, const wchar_t *name, VARIANT *pVar);
 HRESULT DispCall(IDispatch *pDisp, const wchar_t *name);
 HRESULT DispCallInt(IDispatch *pDisp, const wchar_t *name, int value);
+HRESULT DispPutInt(IDispatch *pDisp, const wchar_t *name, int value);
 
 // Returned objects are owned by the caller
 IDispatch *DispGetObj(IDispatch *pDisp, const wchar_t *name);

@@ -59,6 +59,8 @@ struct SlideInfo {
 	HWND slideshowHwnd = nullptr;
 	bool slideshowActive = false;
 	std::wstring presentation; // name of the connected presentation
+	bool blackScreen = false;
+	bool whiteScreen = false;
 };
 
 // A running slideshow, identified by its presentation's full path
@@ -103,8 +105,13 @@ public:
 	// -- Control (posted to STA thread) --
 	void NextSlide();
 	void PrevSlide();
+	void FirstSlide();
+	void LastSlide();
 	void GotoSlide(int oneBasedIndex);
 	void EndShow();
+	// Toggle between a black/white screen and the slide
+	void ToggleBlackScreen();
+	void ToggleWhiteScreen();
 
 	// -- Callbacks (called from STA thread; be fast / non-blocking) --
 	// Fired when connection to PPT is established or lost.
@@ -121,7 +128,7 @@ private:
 	void UpdateNextThumb(IDispatch *pSlides, IDispatch *pNext, int cur, int nextSlide, int total);
 	bool AdviseEvents();
 	void UnadviseEvents();
-	void RunCommands();
+	bool RunCommands();
 	void WaitForWork(DWORD timeoutMs);
 	void PumpFor(DWORD durationMs);
 	void ExportPrefetch();
@@ -129,7 +136,7 @@ private:
 	void RefreshShows();
 
 	// Command queue for cross-thread calls
-	enum class CmdType { None, Next, Prev, Goto, End };
+	enum class CmdType { None, Next, Prev, First, Last, Goto, End, Black, White };
 	struct Command {
 		CmdType type = CmdType::None;
 		int gotoIndex = 0;

@@ -39,6 +39,8 @@ static std::wstring g_strNextSlide;
 static std::wstring g_strNotes;
 static std::wstring g_strWaiting;
 static std::wstring g_strEndOfShow;
+static std::wstring g_strBlackScreen;
+static std::wstring g_strWhiteScreen;
 
 static uint32_t SwapRedBlue(uint32_t color)
 {
@@ -262,7 +264,7 @@ static void *presenter_create(obs_data_t *settings, obs_source_t *source)
 		ctx->outHeight = 1080;
 
 	for (PresenterSource::Text *t : {&ctx->notes, &ctx->counter, &ctx->labelCurrent, &ctx->labelNext,
-					 &ctx->labelNotes, &ctx->statusCurrent, &ctx->statusNext})
+					 &ctx->labelNotes, &ctx->statusCurrent, &ctx->statusNext, &ctx->statusScreen})
 		t->source = obs_source_create_private("text_gdiplus", "presenter_text", nullptr);
 
 	ctx->capture = g_capture;
@@ -282,7 +284,7 @@ static void presenter_destroy(void *data)
 		ctx->capture->RemoveUser();
 
 	for (PresenterSource::Text *t : {&ctx->notes, &ctx->counter, &ctx->labelCurrent, &ctx->labelNext,
-					 &ctx->labelNotes, &ctx->statusCurrent, &ctx->statusNext}) {
+					 &ctx->labelNotes, &ctx->statusCurrent, &ctx->statusNext, &ctx->statusScreen}) {
 		obs_source_release(t->source);
 		t->source = nullptr;
 	}
@@ -383,6 +385,8 @@ static void presenter_tick(void *data, float /*seconds*/)
 	ctx->currentSlide = info.currentSlide;
 	ctx->totalSlides = info.totalSlides;
 	ctx->nextSlide = info.nextSlide;
+	ctx->blackScreen = info.blackScreen;
+	ctx->whiteScreen = info.whiteScreen;
 	ctx->currentNotes = info.notes;
 	ctx->slideAspect = ctx->bridge->GetSlideAspect();
 
@@ -416,6 +420,8 @@ static void presenter_tick(void *data, float /*seconds*/)
 		ReplaceArg(counter, L"%2", ctx->totalSlides);
 	}
 	ctx->counter.Set(counter, ctx->colText, ctx->Px(26), true);
+	ctx->statusScreen.Set(ctx->whiteScreen ? g_strWhiteScreen : g_strBlackScreen, ctx->colAccent, ctx->Px(20),
+			      true);
 
 	std::shared_ptr<const ppt::SlideThumb> thumb = ctx->currentSlide > 0 ? info.nextThumb : nullptr;
 	if (thumb != ctx->nextThumb) {
@@ -506,8 +512,15 @@ void PresenterSource::RenderControls()
 	if (currentSlide <= 0 || totalSlides <= 0)
 		return;
 
+	int barRight = r.x + r.cx - pad;
+	if (blackScreen || whiteScreen) {
+		barRight -= (int)statusScreen.Width();
+		statusScreen.Draw((float)barRight, r.y + (r.cy - (int)statusScreen.Height()) * 0.5f);
+		barRight -= pad;
+	}
+
 	int barX = r.x + pad + (int)counter.Width() + pad;
-	int barW = r.x + r.cx - pad - barX;
+	int barW = barRight - barX;
 	int barH = Px(6);
 	int barY = r.y + (r.cy - barH) / 2;
 	if (barW <= 0)
@@ -611,6 +624,8 @@ void RegisterPresenterSource()
 	g_strNotes = ModuleTextW("PPT.PresenterSource.Notes");
 	g_strWaiting = ModuleTextW("PPT.PresenterSource.Waiting");
 	g_strEndOfShow = ModuleTextW("PPT.PresenterSource.EndOfShow");
+	g_strBlackScreen = ModuleTextW("PPT.PresenterSource.BlackScreen");
+	g_strWhiteScreen = ModuleTextW("PPT.PresenterSource.WhiteScreen");
 
 	obs_source_info info = {};
 	info.id = "ppt_presenter_source";

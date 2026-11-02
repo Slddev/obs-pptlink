@@ -62,11 +62,14 @@ struct PresenterSource {
 	Text labelNotes;
 	Text statusCurrent;
 	Text statusNext;
+	Text statusScreen;
 
 	std::wstring currentNotes;
 	int currentSlide = 0;
 	int totalSlides = 0;
 	int nextSlide = 0;
+	bool blackScreen = false;
+	bool whiteScreen = false;
 	float slideAspect = 16.0f / 9.0f;
 
 	uint32_t outWidth = 1920;

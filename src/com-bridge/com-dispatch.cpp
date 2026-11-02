@@ -30,17 +30,23 @@ static bool DispGetAs(IDispatch *pDisp, const wchar_t *name, VARTYPE vt, VARIANT
 	return false;
 }
 
+static HRESULT DispGetId(IDispatch *pDisp, const wchar_t *name, DISPID &dispid)
+{
+	if (!pDisp || !name)
+		return E_POINTER;
+	BSTR bname = SysAllocString(name);
+	HRESULT hr = pDisp->GetIDsOfNames(IID_NULL, &bname, 1, LOCALE_USER_DEFAULT, &dispid);
+	SysFreeString(bname);
+	return hr;
+}
+
 HRESULT DispInvoke(IDispatch *pDisp, const wchar_t *name, WORD flags, VARIANT *args, UINT argCount, VARIANT *pResult)
 {
 	if (pResult)
 		VariantInit(pResult);
-	if (!pDisp || !name)
-		return E_POINTER;
 
 	DISPID dispid;
-	BSTR bname = SysAllocString(name);
-	HRESULT hr = pDisp->GetIDsOfNames(IID_NULL, &bname, 1, LOCALE_USER_DEFAULT, &dispid);
-	SysFreeString(bname);
+	HRESULT hr = DispGetId(pDisp, name, dispid);
 	if (FAILED(hr))
 		return hr;
 
@@ -72,6 +78,23 @@ HRESULT DispCallInt(IDispatch *pDisp, const wchar_t *name, int value)
 	arg.vt = VT_I4;
 	arg.lVal = value;
 	return DispInvoke(pDisp, name, DISPATCH_METHOD, &arg, 1, nullptr);
+}
+
+HRESULT DispPutInt(IDispatch *pDisp, const wchar_t *name, int value)
+{
+	DISPID dispid;
+	HRESULT hr = DispGetId(pDisp, name, dispid);
+	if (FAILED(hr))
+		return hr;
+
+	VARIANT arg;
+	VariantInit(&arg);
+	arg.vt = VT_I4;
+	arg.lVal = value;
+	DISPID putId = DISPID_PROPERTYPUT;
+	DISPPARAMS dp{&arg, &putId, 1, 1};
+	return pDisp->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_PROPERTYPUT, &dp, nullptr, nullptr,
+			     nullptr);
 }
 
 IDispatch *DispGetObj(IDispatch *pDisp, const wchar_t *name)

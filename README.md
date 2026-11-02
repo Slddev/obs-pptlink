@@ -41,7 +41,7 @@ Two docks are registered automatically under **View → Docks**:
 | Dock | Contents |
 |---|---|
 | PPTLink: Next Slide | Upcoming slide thumbnail + slide counter |
-| PPTLink: Notes & Controls | Current slide speaker notes + Prev/Next buttons |
+| PPTLink: Notes & Controls | Current slide speaker notes, First/Prev/Next/Last buttons, go to slide, black/white screen toggles, and a presentation picker when several slideshows are running |
 
 ### Hotkeys
 
@@ -53,6 +53,8 @@ Register under **Settings → Hotkeys**:
 | PPTLink: Next Slide | Advance the slideshow |
 | PPTLink: Previous Slide | Go back one slide |
 | PPTLink: Last Slide | Jump to the last slide |
+| PPTLink: Toggle Black Screen | Black out the slideshow, or return to the slide |
+| PPTLink: Toggle White Screen | White out the slideshow, or return to the slide |
 
 ---
 

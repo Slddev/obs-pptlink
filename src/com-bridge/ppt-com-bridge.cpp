@@ -26,6 +26,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace ppt {
 
+// PpSlideShowState
+constexpr int ppSlideShowRunning = 1;
+constexpr int ppSlideShowBlackScreen = 3;
+constexpr int ppSlideShowWhiteScreen = 4;
+
 ComBridge::ComBridge()
 {
 	m_wakeEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
@@ -117,6 +122,22 @@ void ComBridge::PrevSlide()
 {
 	PostCommand({CmdType::Prev});
 }
+void ComBridge::FirstSlide()
+{
+	PostCommand({CmdType::First});
+}
+void ComBridge::LastSlide()
+{
+	PostCommand({CmdType::Last});
+}
+void ComBridge::ToggleBlackScreen()
+{
+	PostCommand({CmdType::Black});
+}
+void ComBridge::ToggleWhiteScreen()
+{
+	PostCommand({CmdType::White});
+}
 void ComBridge::EndShow()
 {
 	PostCommand({CmdType::End});
@@ -161,7 +182,8 @@ void ComBridge::ThreadProc()
 		if (m_stopRequested.load())
 			break;
 
-		RunCommands();
+		if (RunCommands())
+			m_lastPollTick = 0;
 
 		if (m_preferenceChanged.exchange(false)) {
 			std::wstring want = GetPreferredShow();
@@ -255,7 +277,7 @@ void ComBridge::UpdateNextThumb(IDispatch *pSlides, IDispatch *pNext, int cur, i
 	m_prefetchDue = GetTickCount64() + 500;
 }
 
-void ComBridge::RunCommands()
+bool ComBridge::RunCommands()
 {
 	std::deque<Command> cmds;
 	{
@@ -274,6 +296,19 @@ void ComBridge::RunCommands()
 		case CmdType::Prev:
 			DispCall(m_pView, L"Previous");
 			break;
+		case CmdType::First:
+			DispCall(m_pView, L"First");
+			break;
+		case CmdType::Last:
+			DispCall(m_pView, L"Last");
+			break;
+		case CmdType::Black:
+		case CmdType::White: {
+			int screen = cmd.type == CmdType::Black ? ppSlideShowBlackScreen : ppSlideShowWhiteScreen;
+			int state = DispGetInt(m_pView, L"State", ppSlideShowRunning);
+			DispPutInt(m_pView, L"State", state == screen ? ppSlideShowRunning : screen);
+			break;
+		}
 		case CmdType::Goto:
 			DispCallInt(m_pView, L"GotoSlide", cmd.gotoIndex);
 			break;
@@ -284,6 +319,7 @@ void ComBridge::RunCommands()
 			break;
 		}
 	}
+	return !cmds.empty();
 }
 
 void ComBridge::WaitForWork(DWORD timeoutMs)
@@ -570,6 +606,9 @@ void ComBridge::PollState()
 	info.slideshowHwnd = GetShowHwnd(m_pShow);
 	info.slideshowActive = true;
 	info.presentation = m_currentShowName;
+	int state = DispGetInt(m_pView, L"State");
+	info.blackScreen = state == ppSlideShowBlackScreen;
+	info.whiteScreen = state == ppSlideShowWhiteScreen;
 
 	{
 		std::lock_guard<std::mutex> lk(m_mutex);
