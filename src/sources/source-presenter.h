@@ -70,6 +70,7 @@ struct PresenterSource {
 	int nextSlide = 0;
 	bool blackScreen = false;
 	bool whiteScreen = false;
+	bool frozen = false;
 	float slideAspect = 16.0f / 9.0f;
 
 	uint32_t outWidth = 1920;

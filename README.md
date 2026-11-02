@@ -41,7 +41,7 @@ Two docks are registered automatically under **View → Docks**:
 | Dock | Contents |
 |---|---|
 | PPTLink: Next Slide | Upcoming slide thumbnail + slide counter |
-| PPTLink: Notes & Controls | Current slide speaker notes, First/Prev/Next/Last buttons, go to slide, black/white screen toggles, and a presentation picker when several slideshows are running |
+| PPTLink: Notes & Controls | Current slide speaker notes, First/Prev/Next/Last buttons, go to slide, black/white screen and freeze toggles, and a presentation picker when several slideshows are running |
 
 ### Hotkeys
 
@@ -55,6 +55,7 @@ Register under **Settings → Hotkeys**:
 | PPTLink: Last Slide | Jump to the last slide |
 | PPTLink: Toggle Black Screen | Black out the slideshow, or return to the slide |
 | PPTLink: Toggle White Screen | White out the slideshow, or return to the slide |
+| PPTLink: Toggle Slide Freeze | Hold the Slide source on the current frame while the presenter view stays live |
 
 ---
 

@@ -65,6 +65,7 @@ private:
 	QPushButton *m_btnGoto = nullptr;
 	QPushButton *m_btnBlack = nullptr;
 	QPushButton *m_btnWhite = nullptr;
+	QPushButton *m_btnFreeze = nullptr;
 	int m_shownTotal = -1;
 	std::wstring m_lastNotes;
 };

@@ -17,9 +17,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "hotkeys.h"
+#include "wgc-capture/shared-capture.h"
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <util/config-file.h>
+
+extern wgc::SharedCapture *g_capture;
 
 namespace hotkeys {
 
@@ -57,6 +60,11 @@ static Hotkey g_hotkeys[] = {
 	{"ppt.global.white_screen", "PPT.Hotkey.WhiteScreen", "ppt_white_screen",
 	 [](ppt::ComBridge *br) {
 		 br->ToggleWhiteScreen();
+	 }},
+	{"ppt.global.freeze_slide", "PPT.Hotkey.FreezeSlide", "ppt_freeze_slide",
+	 [](ppt::ComBridge *) {
+		 if (g_capture)
+			 g_capture->SetFrozen(!g_capture->IsFrozen());
 	 }},
 };
 

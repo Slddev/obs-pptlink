@@ -41,6 +41,7 @@ static std::wstring g_strWaiting;
 static std::wstring g_strEndOfShow;
 static std::wstring g_strBlackScreen;
 static std::wstring g_strWhiteScreen;
+static std::wstring g_strFrozen;
 
 static uint32_t SwapRedBlue(uint32_t color)
 {
@@ -387,6 +388,7 @@ static void presenter_tick(void *data, float /*seconds*/)
 	ctx->nextSlide = info.nextSlide;
 	ctx->blackScreen = info.blackScreen;
 	ctx->whiteScreen = info.whiteScreen;
+	ctx->frozen = ctx->capture && ctx->capture->IsFrozen();
 	ctx->currentNotes = info.notes;
 	ctx->slideAspect = ctx->bridge->GetSlideAspect();
 
@@ -420,8 +422,10 @@ static void presenter_tick(void *data, float /*seconds*/)
 		ReplaceArg(counter, L"%2", ctx->totalSlides);
 	}
 	ctx->counter.Set(counter, ctx->colText, ctx->Px(26), true);
-	ctx->statusScreen.Set(ctx->whiteScreen ? g_strWhiteScreen : g_strBlackScreen, ctx->colAccent, ctx->Px(20),
-			      true);
+	ctx->statusScreen.Set(ctx->frozen        ? g_strFrozen
+			      : ctx->whiteScreen ? g_strWhiteScreen
+						 : g_strBlackScreen,
+			      ctx->colAccent, ctx->Px(20), true);
 
 	std::shared_ptr<const ppt::SlideThumb> thumb = ctx->currentSlide > 0 ? info.nextThumb : nullptr;
 	if (thumb != ctx->nextThumb) {
@@ -509,15 +513,15 @@ void PresenterSource::RenderControls()
 	int pad = Px(20);
 	counter.Draw((float)(r.x + pad), r.y + (r.cy - (int)counter.Height()) * 0.5f);
 
-	if (currentSlide <= 0 || totalSlides <= 0)
-		return;
-
 	int barRight = r.x + r.cx - pad;
-	if (blackScreen || whiteScreen) {
+	if (frozen || blackScreen || whiteScreen) {
 		barRight -= (int)statusScreen.Width();
 		statusScreen.Draw((float)barRight, r.y + (r.cy - (int)statusScreen.Height()) * 0.5f);
 		barRight -= pad;
 	}
+
+	if (currentSlide <= 0 || totalSlides <= 0)
+		return;
 
 	int barX = r.x + pad + (int)counter.Width() + pad;
 	int barW = barRight - barX;
@@ -626,6 +630,7 @@ void RegisterPresenterSource()
 	g_strEndOfShow = ModuleTextW("PPT.PresenterSource.EndOfShow");
 	g_strBlackScreen = ModuleTextW("PPT.PresenterSource.BlackScreen");
 	g_strWhiteScreen = ModuleTextW("PPT.PresenterSource.WhiteScreen");
+	g_strFrozen = ModuleTextW("PPT.PresenterSource.Frozen");
 
 	obs_source_info info = {};
 	info.id = "ppt_presenter_source";

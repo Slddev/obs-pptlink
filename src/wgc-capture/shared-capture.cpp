@@ -78,6 +78,64 @@ bool SharedCapture::AcquireFrame(gs_texture_t *&texture)
 	return m_session.AcquireLatestFrame(texture);
 }
 
+bool SharedCapture::AcquireOutputFrame(gs_texture_t *&texture)
+{
+	if (m_frozenTex) {
+		texture = m_frozenTex;
+		return true;
+	}
+	return AcquireFrame(texture);
+}
+
+uint32_t SharedCapture::OutputWidth() const
+{
+	uint32_t w = m_frozenWidth.load();
+	return w ? w : Width();
+}
+
+uint32_t SharedCapture::OutputHeight() const
+{
+	uint32_t h = m_frozenHeight.load();
+	return h ? h : Height();
+}
+
+void SharedCapture::UpdateFrozenFrame()
+{
+	if (!m_frozen.load()) {
+		ReleaseFrozenFrame();
+		return;
+	}
+	if (m_frozenTex || !m_initialized)
+		return;
+
+	obs_enter_graphics();
+	gs_texture_t *live = nullptr;
+	m_session.AcquireLatestFrame(live);
+	if (live) {
+		uint32_t w = gs_texture_get_width(live);
+		uint32_t h = gs_texture_get_height(live);
+		m_frozenTex = gs_texture_create(w, h, gs_texture_get_color_format(live), 1, nullptr, 0);
+		if (m_frozenTex) {
+			gs_copy_texture(m_frozenTex, live);
+			m_frozenWidth.store(w);
+			m_frozenHeight.store(h);
+		}
+	}
+	obs_leave_graphics();
+}
+
+void SharedCapture::ReleaseFrozenFrame()
+{
+	if (!m_frozenTex)
+		return;
+	obs_enter_graphics();
+	gs_texture_destroy(m_frozenTex);
+	obs_leave_graphics();
+	m_frozenTex = nullptr;
+	m_frozenWidth.store(0);
+	m_frozenHeight.store(0);
+}
+
 void SharedCapture::TickThunk(void *param, float seconds)
 {
 	static_cast<SharedCapture *>(param)->Tick(seconds);
@@ -85,6 +143,7 @@ void SharedCapture::TickThunk(void *param, float seconds)
 
 void SharedCapture::Shutdown()
 {
+	ReleaseFrozenFrame();
 	if (!m_initialized)
 		return;
 	m_session.Destroy();
@@ -118,6 +177,8 @@ void SharedCapture::Tick(float seconds)
 		};
 		m_pollAccum = 0.5f;
 	}
+
+	UpdateFrozenFrame();
 
 	bool connected = m_bridge && m_bridge->IsConnected();
 	if (connected != m_bridgeConnected) {

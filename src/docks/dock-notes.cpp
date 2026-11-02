@@ -17,10 +17,13 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "dock-notes.h"
+#include "../wgc-capture/shared-capture.h"
 #include <obs-module.h>
 #include <util/platform.h>
 #include <QSignalBlocker>
 #include <algorithm>
+
+extern wgc::SharedCapture *g_capture;
 
 namespace dock {
 
@@ -100,11 +103,15 @@ void NotesDock::buildUi()
 
 	m_btnBlack = new QPushButton(obs_module_text("PPT.NotesDock.Black"), this);
 	m_btnWhite = new QPushButton(obs_module_text("PPT.NotesDock.White"), this);
+	m_btnFreeze = new QPushButton(obs_module_text("PPT.NotesDock.Freeze"), this);
+	m_btnFreeze->setToolTip(obs_module_text("PPT.NotesDock.FreezeTip"));
 	m_btnBlack->setCheckable(true);
 	m_btnWhite->setCheckable(true);
+	m_btnFreeze->setCheckable(true);
 
 	screenRow->addWidget(m_btnBlack);
 	screenRow->addWidget(m_btnWhite);
+	screenRow->addWidget(m_btnFreeze);
 	vbox->addLayout(screenRow);
 
 	connect(m_btnFirst, &QPushButton::clicked, this, [this]() {
@@ -130,6 +137,10 @@ void NotesDock::buildUi()
 		if (m_bridge)
 			m_bridge->ToggleWhiteScreen();
 	});
+	connect(m_btnFreeze, &QPushButton::clicked, this, [](bool checked) {
+		if (g_capture)
+			g_capture->SetFrozen(checked);
+	});
 }
 
 void NotesDock::updateFromInfo(const ppt::SlideInfo &info, bool connected)
@@ -145,6 +156,10 @@ void NotesDock::updateFromInfo(const ppt::SlideInfo &info, bool connected)
 		QSignalBlocker blockWhite(m_btnWhite);
 		m_btnBlack->setChecked(connected && info.blackScreen);
 		m_btnWhite->setChecked(connected && info.whiteScreen);
+	}
+	{
+		QSignalBlocker blockFreeze(m_btnFreeze);
+		m_btnFreeze->setChecked(g_capture && g_capture->IsFrozen());
 	}
 
 	if (connected && info.totalSlides != m_shownTotal) {

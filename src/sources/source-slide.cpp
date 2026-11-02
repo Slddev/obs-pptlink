@@ -52,14 +52,14 @@ static void slide_source_destroy(void *data)
 static uint32_t slide_source_get_width(void *data)
 {
 	auto *ctx = static_cast<SlideSource *>(data);
-	uint32_t w = ctx->capture ? ctx->capture->Width() : 0;
+	uint32_t w = ctx->capture ? ctx->capture->OutputWidth() : 0;
 	return w > 0 ? w : 1920;
 }
 
 static uint32_t slide_source_get_height(void *data)
 {
 	auto *ctx = static_cast<SlideSource *>(data);
-	uint32_t h = ctx->capture ? ctx->capture->Height() : 0;
+	uint32_t h = ctx->capture ? ctx->capture->OutputHeight() : 0;
 	return h > 0 ? h : 1080;
 }
 
@@ -76,7 +76,7 @@ void SlideSource::RenderFrame(gs_effect_t *effect)
 {
 	gs_texture_t *texture = nullptr;
 	if (capture)
-		capture->AcquireFrame(texture);
+		capture->AcquireOutputFrame(texture);
 
 	if (!texture)
 		return;
